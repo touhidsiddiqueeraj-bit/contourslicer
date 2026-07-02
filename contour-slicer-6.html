@@ -1,0 +1,2891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Contour Slicer — STL to MDF Templates</title>
+<script>
+  // Inline blocking script — runs BEFORE first paint to prevent a flash of the
+  // wrong theme (FOUC). The module script below also reads the same key, but
+  // module scripts are deferred, so without this the page would render with the
+  // OS-default theme for one frame even when the user has explicitly overridden it.
+  (function(){
+    try{
+      var t = localStorage.getItem('contourSlicer.theme');
+      if(t === 'light' || t === 'dark'){
+        document.documentElement.setAttribute('data-theme', t);
+      }
+    }catch(e){/* localStorage unavailable — fall back to OS preference */}
+  })();
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root{
+    --bg:#14181c;
+    --panel:#1b2126;
+    --panel2:#20272d;
+    --line:#2c343a;
+    --ink:#e6ebee;
+    --dim:#8b9aa3;
+    --accent:#e8853a;
+    --accent2:#4f9d8f;
+    --viewer-a:#1c2328;
+    --viewer-b:#101417;
+    --mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+    --sans: 'IBM Plex Sans', 'Segoe UI', Arial, sans-serif;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      color-scheme: light;
+      --bg:#f3f1ea;
+      --panel:#ffffff;
+      --panel2:#f2efe7;
+      --line:#ddd7c8;
+      --ink:#232019;
+      --dim:#726d5f;
+      --accent:#c2621e;
+      --accent2:#2c7a6c;
+      --viewer-a:#e9e4d6;
+      --viewer-b:#d9d2c0;
+    }
+  }
+  /* explicit overrides set by the theme-toggle button; take precedence over the OS preference above */
+  html[data-theme="light"]{
+    color-scheme: light;
+    --bg:#f3f1ea; --panel:#ffffff; --panel2:#f2efe7; --line:#ddd7c8; --ink:#232019; --dim:#726d5f;
+    --accent:#c2621e; --accent2:#2c7a6c; --viewer-a:#e9e4d6; --viewer-b:#d9d2c0;
+  }
+  html[data-theme="dark"]{
+    color-scheme: dark;
+    --bg:#14181c; --panel:#1b2126; --panel2:#20272d; --line:#2c343a; --ink:#e6ebee; --dim:#8b9aa3;
+    --accent:#e8853a; --accent2:#4f9d8f; --viewer-a:#1c2328; --viewer-b:#101417;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--sans);overscroll-behavior:none;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;}
+  #app{display:flex;height:100vh;height:var(--app-height, 100vh);overflow:hidden;}
+  #left{width:400px;min-width:340px;border-right:1px solid var(--line);display:flex;flex-direction:column;background:var(--panel);}
+  #right{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;}
+  header{padding:14px 18px;border-bottom:1px solid var(--line);background:linear-gradient(180deg, var(--panel) 0%, var(--panel2) 100%);}
+  header h1{font-size:15px;margin:0 0 2px;letter-spacing:-.01em;font-weight:600;}
+  header .sub{font-family:var(--mono);font-size:11px;color:var(--dim);}
+  .scroll{overflow-y:auto;flex:1;min-height:0;padding:14px 18px;}
+  .scroll::-webkit-scrollbar{width:8px;}
+  .scroll::-webkit-scrollbar-track{background:transparent;}
+  .scroll::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px;}
+  .scroll::-webkit-scrollbar-thumb:hover{background:var(--dim);}
+  .section{margin-bottom:20px;}
+  .section h2{font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);margin:0 0 12px;font-weight:600;display:flex;align-items:center;gap:7px;}
+  .section h2::before{content:'';display:inline-block;width:3px;height:11px;background:var(--accent);border-radius:2px;flex:0 0 auto;}
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:11.5px;color:var(--dim);margin-bottom:5px;font-weight:500;}
+  .field input[type=number], .field select{
+    width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+    padding:8px 10px;border-radius:6px;font-family:var(--mono);font-size:13px;
+    transition:border-color .15s,box-shadow .15s;
+  }
+  .field input[type=number]:focus, .field select:focus{
+    outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(232,133,58,.15);
+  }
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .radio-group{display:flex;flex-direction:column;gap:7px;}
+  .radio-group label{display:flex;align-items:flex-start;gap:8px;font-size:12.5px;color:var(--ink);cursor:pointer;line-height:1.4;}
+  .radio-group input[type=radio]{margin-top:2px;accent-color:var(--accent);}
+  .checkline{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink);cursor:pointer;margin-bottom:10px;}
+  .checkline input[type=checkbox]{accent-color:var(--accent);}
+  .dropzone{
+    border:1.5px dashed var(--line);border-radius:8px;padding:24px 12px;text-align:center;
+    color:var(--dim);font-size:12.5px;cursor:pointer;transition:.15s;
+    background:var(--panel2);
+  }
+  .dropzone:hover, .dropzone.drag{border-color:var(--accent);color:var(--ink);background:rgba(232,133,58,.06);}
+  .dropzone strong{color:var(--ink);}
+  .filename{font-family:var(--mono);font-size:11.5px;color:var(--accent2);margin-top:8px;word-break:break-all;}
+  button{
+    font-family:var(--sans);font-size:13px;font-weight:600;border:none;border-radius:6px;
+    padding:10px 14px;cursor:pointer;width:100%;transition:.15s;touch-action:manipulation;
+  }
+  .btn-primary{background:var(--accent);color:#1a1208;box-shadow:0 1px 3px rgba(0,0,0,.2);}
+  .btn-primary:hover{background:#f2954a;box-shadow:0 2px 6px rgba(232,133,58,.35);}
+  .btn-primary:active{transform:translateY(1px);}
+  .btn-primary:disabled{background:#4a4238;color:#8a7d6a;cursor:not-allowed;box-shadow:none;}
+  .btn-secondary{background:var(--panel2);color:var(--ink);border:1px solid var(--line);margin-top:8px;}
+  .btn-secondary:hover{border-color:var(--accent2);background:var(--panel);}
+  .btn-secondary:active{transform:translateY(1px);}
+  .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:10px 12px;transition:border-color .15s;}
+  .stat:hover{border-color:var(--accent2);}
+  .stat .v{font-family:var(--mono);font-size:17px;color:var(--accent);font-weight:600;line-height:1.1;}
+  .stat .l{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-top:3px;font-weight:500;}
+  /* overflow:hidden + min-height:0 decouple the viewer's height from its canvas
+     content. Without this, the canvas (sized via renderer.setSize to match
+     clientHeight) feeds back into the viewer's min-content height (default
+     min-height:auto on flex items), creating a runaway growth loop where each
+     resize makes the viewer taller, which makes the next resize taller still.
+     The canvas now always exactly fills its flex-allocated box. */
+  #viewer{flex:1;min-height:0;position:relative;overflow:hidden;background:radial-gradient(circle at 50% 40%, var(--viewer-a), var(--viewer-b));}
+  #viewer canvas{display:block;}
+  .hint{position:absolute;bottom:50px;left:16px;font-family:var(--mono);font-size:11px;color:var(--dim);z-index:4;pointer-events:none;}
+  #layerbar{border-top:1px solid var(--line);background:var(--panel);padding:10px 14px;display:none;}
+  #layerbar.show{display:block;}
+  #layerbar .lb-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+  #layerbar .lb-head h2{margin:0;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);font-weight:600;}
+  #layerstrip{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;}
+  #layerstrip::-webkit-scrollbar{height:6px;}
+  #layerstrip::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px;}
+  .layerchip{
+    flex:0 0 auto;width:54px;height:54px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:6px;position:relative;cursor:pointer;transition:.15s;
+  }
+  .layerchip:hover{border-color:var(--accent);transform:translateY(-1px);}
+  .layerchip svg{width:100%;height:100%;padding:5px;box-sizing:border-box;}
+  .layerchip .num{position:absolute;bottom:2px;right:4px;font-family:var(--mono);font-size:8px;color:var(--dim);}
+  .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--dim);text-align:center;padding:40px;}
+  .empty-state .glyph{font-size:34px;margin-bottom:14px;opacity:.5;}
+  .note{font-size:11.5px;color:var(--dim);line-height:1.5;margin-top:10px;}
+  .note b{color:var(--ink);}
+  a.linklike{color:var(--accent2);cursor:pointer;text-decoration:underline;}
+
+  /* ---- logo ---- */
+  .logo{display:flex;align-items:center;gap:11px;}
+  .logo-mark{width:34px;height:34px;flex:0 0 auto;filter:drop-shadow(0 1px 2px rgba(0,0,0,.25));}
+  .logo-mark svg{width:100%;height:100%;display:block;}
+
+  /* ---- viewer overlays ---- */
+  .viewer-toggles{position:absolute;top:10px;right:10px;display:flex;gap:6px;z-index:5;flex-wrap:wrap;justify-content:flex-end;max-width:60%;}
+  .viewer-toggle{
+    width:auto;padding:5px 10px;font-size:11px;font-family:var(--mono);font-weight:500;
+    background:rgba(0,0,0,.35);color:var(--dim);border:1px solid var(--line);
+    border-radius:4px;cursor:pointer;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+    transition:.15s;
+  }
+  .viewer-toggle:hover{color:var(--ink);border-color:var(--accent);}
+  .viewer-toggle.on{background:var(--accent);color:#1a1208;border-color:var(--accent);}
+
+  /* dimensions readout (top-left of viewer) */
+  #dimsReadout{
+    position:absolute;top:10px;left:10px;z-index:5;display:none;
+    font-family:var(--mono);font-size:11px;color:var(--ink);
+    background:rgba(0,0,0,.45);padding:5px 10px;border-radius:4px;
+    border:1px solid var(--line);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+    pointer-events:none;
+  }
+  #dimsReadout.show{display:block;}
+  #dimsReadout .lbl{color:var(--dim);font-size:9px;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:1px;}
+  #dimsReadout .val{color:var(--accent);font-weight:600;}
+
+  /* axis gizmo (bottom-right of viewer) */
+  #axisGizmo{
+    position:absolute;bottom:12px;right:12px;z-index:5;width:70px;height:70px;
+    pointer-events:none;
+  }
+  #axisGizmo canvas{width:100%;height:100%;display:block;}
+
+  /* scale bar (bottom-left) */
+  #scaleBar{
+    position:absolute;bottom:12px;left:14px;z-index:5;display:none;
+    font-family:var(--mono);font-size:10px;color:var(--ink);
+    background:rgba(0,0,0,.45);padding:4px 10px;border-radius:3px;
+    border:1px solid var(--line);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+    align-items:center;gap:7px;pointer-events:none;
+  }
+  #scaleBar.show{display:flex;}
+  #scaleBar .bar{height:2px;background:var(--accent);border-radius:1px;}
+  #scaleBar .lbl{white-space:nowrap;}
+
+  /* measure tool readout */
+  #measureReadout{
+    position:absolute;top:48px;left:10px;z-index:5;display:none;
+    font-family:var(--mono);font-size:11px;color:var(--ink);
+    background:rgba(0,0,0,.55);padding:5px 10px;border-radius:4px;
+    border:1px solid var(--accent);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+    pointer-events:none;
+  }
+  #measureReadout.show{display:block;}
+  #measureReadout .val{color:var(--accent);font-weight:600;}
+
+  /* slice-plane hint badge */
+  #slicePlaneHint{
+    position:absolute;top:48px;right:10px;z-index:5;display:none;
+    font-family:var(--mono);font-size:11px;color:var(--ink);
+    background:rgba(232,133,58,.85);color:#1a1208;padding:4px 10px;border-radius:4px;
+    pointer-events:none;font-weight:600;
+  }
+  #slicePlaneHint.show{display:block;}
+
+  /* layerchip interactivity */
+  .layerchip{cursor:pointer;}
+  .layerchip:hover{border-color:var(--accent);}
+  .layerchip.hidden{opacity:.3;}
+  .layerchip.hidden svg path{stroke:var(--dim);fill:transparent;}
+
+  /* ---- guided walkthrough ---- */
+  #walkthrough{display:none;position:fixed;inset:0;z-index:9500;}
+  #walkthrough.show{display:block;}
+  #wt-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.7);}
+  .wt-spotlight{position:absolute;box-shadow:0 0 0 9999px rgba(0,0,0,.72);border-radius:8px;pointer-events:none;transition:.25s;z-index:1;}
+  .wt-card{
+    position:absolute;z-index:2;max-width:340px;
+    background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:18px 20px;box-shadow:0 8px 30px rgba(0,0,0,.4);
+    transition:.25s;
+  }
+  .wt-card .wt-step{font-family:var(--mono);font-size:10px;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;}
+  .wt-card h3{margin:0 0 8px;font-size:15px;font-weight:600;}
+  .wt-card p{margin:0 0 14px;font-size:13px;line-height:1.55;color:var(--ink);}
+  .wt-card p b{color:var(--accent);}
+  .wt-card .wt-actions{display:flex;gap:8px;justify-content:space-between;align-items:center;}
+  .wt-card .wt-dots{display:flex;gap:5px;}
+  .wt-card .wt-dot{width:7px;height:7px;border-radius:50%;background:var(--line);}
+  .wt-card .wt-dot.on{background:var(--accent);}
+  .wt-btn{width:auto !important;padding:8px 16px !important;font-size:12px !important;}
+  .wt-skip{background:transparent;color:var(--dim);border:none;font-family:var(--sans);cursor:pointer;font-size:12px;}
+  .wt-next{background:var(--accent);color:#1a1208;border:none;border-radius:5px;font-family:var(--sans);font-weight:600;cursor:pointer;padding:8px 16px;font-size:12px;}
+
+  /* walkthrough hint button */
+  #helpBtn, #saveProjectBtn, #loadProjectBtn{width:auto !important;flex:0 0 auto;padding:6px 10px;font-size:11px;background:var(--panel2);color:var(--dim);border:1px solid var(--line);}
+
+  /* ---- assembly preview modal ---- */
+  #assemblyModal{display:none;position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.85);}
+  #assemblyModal.show{display:block;}
+  #assemblyModal .am-bar{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:12px 18px;background:var(--panel);border-bottom:1px solid var(--line);z-index:2;}
+  #assemblyModal .am-bar h3{margin:0;font-size:14px;font-weight:600;}
+  #assemblyModal .am-close{width:auto;padding:7px 16px;font-size:12px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);}
+  #assemblyViewer{position:absolute;inset:0;}
+  #assemblyViewer canvas{display:block;}
+  .am-hint{position:absolute;bottom:14px;left:16px;font-family:var(--mono);font-size:11px;color:var(--dim);z-index:2;pointer-events:none;}
+
+  @media (max-width:860px){
+    #app{flex-direction:column;height:100vh;height:var(--app-height, 100vh);overflow:hidden;}
+    #right{order:1;flex:0 0 42vh;flex:0 0 calc(var(--app-height, 100vh) * 0.42);min-height:220px;}
+    #left{order:2;width:100%;min-width:0;max-width:none;flex:1 1 auto;min-height:0;
+      border-right:none;border-top:1px solid var(--line);-webkit-overflow-scrolling:touch;
+      padding-bottom:env(safe-area-inset-bottom, 0px);}
+    header{padding:12px 16px;padding-top:max(12px, env(safe-area-inset-top, 0px));}
+    .scroll{padding:12px 16px;}
+    .row2{grid-template-columns:1fr 1fr;gap:8px;}
+    button{padding:12px 14px;font-size:14px;}
+    /* iOS Safari auto-zooms on inputs < 16px; force 16px on mobile */
+    input[type=number], select{padding:10px 9px;font-size:16px;}
+    .dropzone{padding:18px 10px;}
+    #layerbar{padding:8px 12px;padding-bottom:max(8px, env(safe-area-inset-bottom, 0px));}
+    /* Larger touch target for theme toggle on mobile */
+    #themeToggle{padding:10px 14px !important;font-size:13px !important;min-height:40px;}
+  }
+  @media (max-width:420px){
+    .row2{grid-template-columns:1fr;}
+    .stat-grid{grid-template-columns:1fr 1fr;}
+  }
+
+  /* ---- print view ---- */
+  #printRoot{display:none;}
+  @media print{
+    #app{display:none;}
+    #printRoot{display:block;}
+  }
+  .pv-page{
+    page-break-after:always;
+    position:relative;
+    box-sizing:border-box;
+  }
+  .pv-page:last-child{page-break-after:auto;}
+  .pv-cover{padding:20mm;font-family:var(--sans);color:#000;}
+  .pv-cover h1{font-size:20px;margin:0 0 6px;}
+  .pv-cover p{font-size:12px;line-height:1.6;}
+  .pv-cover ol{font-size:12px;line-height:1.8;padding-left:18px;}
+  .pv-label{position:absolute;font-family:var(--mono);font-size:8px;color:#000;}
+  .pv-svg{position:absolute;top:0;left:0;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="left">
+    <header>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
+        <div class="logo">
+          <div class="logo-mark">
+            <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="2" y="20" width="28" height="3" rx="0.5" fill="var(--accent2)" opacity="0.5"/>
+              <rect x="2" y="14" width="28" height="3" rx="0.5" fill="var(--accent2)" opacity="0.7"/>
+              <rect x="2" y="8" width="28" height="3" rx="0.5" fill="var(--accent2)"/>
+              <path d="M6 8 L16 2 L26 8" stroke="var(--accent)" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round"/>
+              <path d="M16 2 L16 24" stroke="var(--accent)" stroke-width="1" opacity="0.4" stroke-dasharray="2,2"/>
+            </svg>
+          </div>
+          <div>
+            <h1>Contour Slicer</h1>
+            <div class="sub">STL &rarr; stacked MDF cross-sections</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button id="saveProjectBtn" title="Save project (STL + settings)">Save</button>
+          <button id="loadProjectBtn" title="Load saved project">Load</button>
+          <button id="helpBtn" title="Guided tour">Tour</button>
+          <button id="themeToggle" title="Theme" style="width:auto;flex:0 0 auto;padding:6px 10px;font-size:11px;background:var(--panel2);color:var(--dim);border:1px solid var(--line);">Auto</button>
+        </div>
+        <input type="file" id="projectFileInput" accept=".cspj" style="display:none">
+      </div>
+    </header>
+    <div class="scroll">
+
+      <div class="section">
+        <h2>1 &middot; Model</h2>
+        <div class="dropzone" id="dropzone">
+          <div><strong>Click to upload</strong> or drop an .stl file</div>
+          <div class="filename" id="filename"></div>
+        </div>
+        <input type="file" id="fileInput" accept=".stl" style="display:none">
+        <div class="note" style="margin-top:10px;">New here, or just testing? Try an example — no file needed:</div>
+        <div class="row2" style="margin-top:6px;">
+          <button class="btn-secondary" id="loadExampleRing" style="margin-top:0;">Ring (has a hole)</button>
+          <button class="btn-secondary" id="loadExampleBox" style="margin-top:0;">Box (flat faces)</button>
+        </div>
+        <div class="note">The ring is a good test for Stacked Layers mode; the box is a good test for Flat Panels mode.</div>
+      </div>
+
+      <div class="section">
+        <h2>2 &middot; Decomposition method</h2>
+        <div class="radio-group">
+          <label><input type="radio" name="decompmode" value="auto" checked> <b>Auto-detect</b> (recommended) &mdash; analyzes the model and picks the best method</label>
+          <label><input type="radio" name="decompmode" value="contour"> Stacked horizontal layers — best for rounded / organic shapes</label>
+          <label><input type="radio" name="decompmode" value="panel"> Flat panels, one piece per flat face — best for boxy shapes (cubes, crates, right-angled cases)</label>
+        </div>
+        <div class="note" id="decompNote">Each layer is a closed outline the height of one sheet of MDF; stack and glue them in order.</div>
+        <div class="note" id="autoDetectNote" style="display:none;"></div>
+      </div>
+
+      <div class="section">
+        <h2>3 &middot; Real-world scale</h2>
+        <div class="radio-group">
+          <label><input type="radio" name="scalemode" value="native" checked> STL units are already millimeters</label>
+          <label><input type="radio" name="scalemode" value="fit"> Scale so tallest dimension (Z) equals &rarr;</label>
+        </div>
+        <div class="field" style="margin-top:8px;">
+          <input type="number" id="targetHeight" value="200" min="1" disabled>
+        </div>
+        <div class="field">
+          <label>Rotate model 90&deg; (in case it's on its side)</label>
+          <div class="row2" style="grid-template-columns:1fr 1fr 1fr;gap:6px;">
+            <button class="btn-secondary" id="rotX" style="margin-top:0;padding:8px;font-size:12px;">X axis</button>
+            <button class="btn-secondary" id="rotY" style="margin-top:0;padding:8px;font-size:12px;">Y axis</button>
+            <button class="btn-secondary" id="rotZ" style="margin-top:0;padding:8px;font-size:12px;">Z axis</button>
+          </div>
+        </div>
+        <div class="note" id="axisNote">Slices run along the vertical (Z) axis. Use the rotate buttons if your model is on its side — no need to go back to Tinkercad.</div>
+      </div>
+
+      <div class="section">
+        <h2>4 &middot; Cutting parameters</h2>
+        <div class="row2">
+          <div class="field">
+            <label>MDF thickness (mm)</label>
+            <input type="number" id="thickness" value="6" min="1" step="0.5">
+          </div>
+          <div class="field">
+            <label>Kerf offset (mm)</label>
+            <input type="number" id="kerf" value="0" min="0" step="0.5">
+          </div>
+        </div>
+        <div class="field">
+          <label>MDF sheet size (for material estimate)</label>
+          <select id="sheetSize">
+            <option value="2440x1220">2440 &times; 1220mm (8 &times; 4 ft, standard)</option>
+            <option value="1830x915">1830 &times; 915mm (6 &times; 3 ft)</option>
+            <option value="1220x610">1220 &times; 610mm (4 &times; 2 ft, small)</option>
+            <option value="custom">Custom size...</option>
+          </select>
+        </div>
+        <div class="field" id="customSheetField" style="display:none;">
+          <div class="row2">
+            <div><input type="number" id="sheetW" value="2440" min="50" step="10" placeholder="Width mm"></div>
+            <div><input type="number" id="sheetH" value="1220" min="50" step="10" placeholder="Height mm"></div>
+          </div>
+        </div>
+        <label class="checkline" id="mirrorRow"><input type="checkbox" id="mirrorHalf"> Mirror half-stack (cut half, flip for the other half &mdash; for left-right symmetric models)</label>
+        <label class="checkline" id="foldLinesRow" style="display:none;"><input type="checkbox" id="foldLines"> Unfold as one piece with fold lines (panel mode only)</label>
+        <div class="note">Kerf offset shrinks each outline inward slightly to compensate for blade width. Leave at 0 if unsure — hand-cut tolerance usually dominates anyway.</div>
+      </div>
+
+      <div class="section">
+        <h2>5 &middot; Print layout</h2>
+        <div class="row2">
+          <div class="field">
+            <label>Paper size</label>
+            <select id="paperSize">
+              <option value="a4">A4 (210 &times; 297mm)</option>
+              <option value="letter">US Letter (215.9 &times; 279.4mm)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Tile overlap (mm)</label>
+            <input type="number" id="overlap" value="15" min="5" step="1">
+          </div>
+        </div>
+        <div class="field">
+          <label>Shape spacing (mm) &mdash; gap between shapes packed on a page</label>
+          <input type="number" id="shapeSpacing" value="8" min="2" step="1">
+        </div>
+        <div class="field">
+          <label>Print scale (%) &mdash; shrink or enlarge the final output</label>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <input type="number" id="printScale" value="100" min="10" max="500" step="10" style="flex:1;">
+            <button class="btn-secondary" id="printScaleHalf" style="width:auto;margin:0;padding:8px 12px;font-size:11px;" title="50%">&frac12;</button>
+            <button class="btn-secondary" id="printScaleFull" style="width:auto;margin:0;padding:8px 12px;font-size:11px;" title="100%">1&times;</button>
+            <button class="btn-secondary" id="printScaleDouble" style="width:auto;margin:0;padding:8px 12px;font-size:11px;" title="200%">2&times;</button>
+          </div>
+        </div>
+        <div class="note" style="margin-top:6px;">Print at <b id="scaleNotePct">100%</b> for the model's real-world size. Use <b>50%</b> for a miniature mockup or <b>200%</b> to enlarge. The assembly preview and stats update to match.</div>
+        <label class="checkline" id="alignHolesRow"><input type="checkbox" id="alignHoles" checked> Mark alignment holes per layer (for dowel rods through the stack)</label>
+        <div class="field" id="holeModeField">
+          <label>Alignment hole placement</label>
+          <select id="holeMode">
+            <option value="center">Center (single dowel)</option>
+            <option value="corners">Four corners (more robust registration)</option>
+          </select>
+        </div>
+        <div class="field" id="holeDiaField">
+          <label>Alignment hole diameter (mm)</label>
+          <input type="number" id="holeDia" value="8" min="2" step="1">
+        </div>
+      </div>
+
+      <div class="section" id="printRangeSection" style="display:none;">
+        <h2>6 &middot; What to print</h2>
+        <div class="row2">
+          <div class="field">
+            <label id="rangeFromLabel">From layer #</label>
+            <input type="number" id="rangeFrom" value="1" min="1" step="1">
+          </div>
+          <div class="field">
+            <label id="rangeToLabel">To layer #</label>
+            <input type="number" id="rangeTo" value="1" min="1" step="1">
+          </div>
+        </div>
+        <label class="checkline"><input type="checkbox" id="includeCover" checked> Include instructions &amp; calibration pages (only printed once)</label>
+        <div class="note">Useful for reprinting a single misprinted sheet, or splitting a big job across print sessions. Leave the full range to print everything.</div>
+      </div>
+
+      <div class="section">
+        <button class="btn-primary" id="sliceBtn" disabled>Compute (auto-detect)</button>
+        <button class="btn-secondary" id="printBtn" style="display:none;">Open print templates</button>
+        <button class="btn-secondary" id="assemblyBtn" style="display:none;">Preview assembled result</button>
+        <div class="row2" style="margin-top:8px;">
+          <button class="btn-secondary" id="exportSvgBtn" style="display:none;margin-top:0;">Download SVG (single)</button>
+          <button class="btn-secondary" id="exportSvgZipBtn" style="display:none;margin-top:0;">Download SVGs (ZIP, per layer)</button>
+        </div>
+        <div class="stat-grid" id="stats" style="display:none;">
+          <div class="stat"><div class="v" id="statLayers">–</div><div class="l">layers</div></div>
+          <div class="stat"><div class="v" id="statPages">–</div><div class="l">pages (selected range)</div></div>
+          <div class="stat"><div class="v" id="statArea">–</div><div class="l">MDF area needed</div></div>
+          <div class="stat"><div class="v" id="statHeight">–</div><div class="l">final stack height</div></div>
+          <div class="stat" id="statSheetsWrap"><div class="v" id="statSheets">–</div><div class="l">MDF sheets needed</div></div>
+          <div class="stat" id="statDowelWrap"><div class="v" id="statDowel">–</div><div class="l">dowel rod length</div></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="right">
+    <div id="viewer">
+      <div class="empty-state" id="emptyState">
+        <div class="glyph">&#9651;</div>
+        <div>Upload an STL to preview it here.<br>Tinkercad: Export &rarr; .STL</div>
+      </div>
+      <div class="hint" id="viewHint" style="display:none;">drag to orbit &middot; scroll to zoom</div>
+      <div id="dimsReadout"><span class="lbl">Dimensions (mm)</span><span class="val" id="dimsVal">–</span></div>
+      <div class="viewer-toggles">
+        <button class="viewer-toggle" id="viewFront" title="Front view">Front</button>
+        <button class="viewer-toggle" id="viewTop" title="Top view">Top</button>
+        <button class="viewer-toggle" id="viewIso" title="Isometric view">Iso</button>
+        <button class="viewer-toggle" id="toggleGrid" title="Toggle ground grid (G)">Grid</button>
+        <button class="viewer-toggle" id="toggleRuler" title="Toggle scale ruler (R)">Ruler</button>
+        <button class="viewer-toggle" id="toggleWire" title="Wireframe (W)">Wire</button>
+        <button class="viewer-toggle" id="toggleMeasure" title="Measure (M)">Measure</button>
+      </div>
+      <div id="measureReadout">distance: <span class="val" id="measureVal">–</span></div>
+      <div id="slicePlaneHint">Layer <span id="slicePlaneNum">–</span></div>
+      <div id="scaleBar"><div class="bar"></div><span class="lbl">100mm</span></div>
+      <div id="axisGizmo"></div>
+    </div>
+    <div id="layerbar">
+      <div class="lb-head"><h2 id="layerbarHeading">Layer preview (bottom &rarr; top)</h2></div>
+      <div id="layerstrip"></div>
+    </div>
+  </div>
+</div>
+
+<div id="printRoot"></div>
+
+<div id="assemblyModal">
+  <div class="am-bar">
+    <h3 id="assemblyTitle">Assembled preview</h3>
+    <button class="am-close" id="assemblyClose">Close</button>
+  </div>
+  <div id="assemblyViewer"></div>
+  <div class="am-hint" id="assemblyHint">drag to orbit &middot; scroll to zoom</div>
+</div>
+
+<div id="walkthrough">
+  <div id="wt-backdrop"></div>
+  <div class="wt-spotlight" id="wtSpotlight"></div>
+  <div class="wt-card" id="wtCard">
+    <div class="wt-step" id="wtStep">Step 1 of 6</div>
+    <h3 id="wtTitle">Welcome to Contour Slicer</h3>
+    <p id="wtBody"></p>
+    <div class="wt-actions">
+      <button class="wt-skip" id="wtSkip">Skip tour</button>
+      <div class="wt-dots" id="wtDots"></div>
+      <button class="wt-next" id="wtNext">Next</button>
+    </div>
+  </div>
+</div>
+
+<div id="fatalError" style="display:none;position:fixed;inset:0;z-index:9999;background:#1a0f0f;color:#ffb4a8;padding:22px;font-family:monospace;font-size:12.5px;line-height:1.6;overflow:auto;">
+  <strong style="font-size:14px;">This app failed to start.</strong>
+  <div id="fatalErrorMsg" style="margin-top:10px;white-space:pre-wrap;opacity:.85;"></div>
+  <div style="margin-top:16px;color:#e8c9c2;">
+    It needs an internet connection the first time it runs, to load the 3D engine (three.js) from a CDN.
+    If you're online and still seeing this: try opening the file in a different browser (Chrome or Safari
+    tend to be more permissive than in-app browsers), or re-download the file and open it again.
+  </div>
+  <button onclick="location.reload()" style="margin-top:16px;padding:10px 16px;background:#e8853a;color:#1a1208;border:none;border-radius:5px;font-weight:600;">Reload</button>
+</div>
+
+<script>
+  // Mobile browsers resize the visible viewport (address bar show/hide) without
+  // vh/dvh units always reflecting it correctly in every engine, so we measure
+  // the real visible height in JS and drive layout from a CSS variable instead.
+  function setAppHeight(){
+    const h = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
+    document.documentElement.style.setProperty('--app-height', h + 'px');
+  }
+  setAppHeight();
+  window.addEventListener('resize', setAppHeight);
+  window.addEventListener('orientationchange', setAppHeight);
+  if(window.visualViewport){
+    window.visualViewport.addEventListener('resize', setAppHeight);
+  }
+
+  function showFatalError(msg){
+    const el = document.getElementById('fatalError');
+    const m = document.getElementById('fatalErrorMsg');
+    if(el && m && el.style.display==='none'){ m.textContent = msg; el.style.display='block'; }
+  }
+  // Some browser warnings get delivered as window 'error' events even though
+  // they are not actual failures. Filter them out so the fatal-error overlay
+  // doesn't appear for benign noise.
+  function isBenignBrowserWarning(msg){
+    if(!msg) return false;
+    const s = String(msg);
+    return s.indexOf('ResizeObserver loop') !== -1;   // Chrome fires this as an error; observer still works
+  }
+  window.addEventListener('error', e=>{
+    if(isBenignBrowserWarning(e.message)) return;
+    showFatalError((e.message||'Unknown error') + (e.filename ? ('\n'+e.filename+':'+e.lineno) : ''));
+  });
+  window.addEventListener('unhandledrejection', e=>{
+    const msg = e.reason && e.reason.message ? e.reason.message : e.reason;
+    if(isBenignBrowserWarning(msg)) return;
+    showFatalError('Promise rejection: ' + msg);
+  });
+  setTimeout(()=>{
+    if(!window.__contourSlicerReady){
+      showFatalError('The 3D engine (three.js) did not finish loading in time — likely the CDN request was blocked or there\'s no network connection.');
+    }
+  }, 9000);
+</script>
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ---------- state ----------
+let geometry = null;        // raw THREE.BufferGeometry (unscaled, native units)
+let scaleFactor = 1;        // native units -> mm
+let layers = [];            // [{loops:[[{x,y},...], ...]}] in mm — either Z-slices or flat-face panels
+let decompMode = 'auto'; // 'auto' | 'contour' | 'panel'
+let resolvedDecompMode = 'contour'; // the actual mode after resolving 'auto'
+let modelBoundsMM = null;   // {minX,maxX,minY,maxY,minZ,maxZ}
+let paperMM = { w:210, h:297 };
+
+document.querySelectorAll('input[name=decompmode]').forEach(r=>{
+  r.addEventListener('change', ()=>{
+    decompMode = document.querySelector('input[name=decompmode]:checked').value;
+    const isAuto = decompMode === 'auto';
+    const isPanel = decompMode === 'panel';
+    const alignOn = !isPanel && !isAuto && document.getElementById('alignHoles').checked;
+    document.getElementById('alignHolesRow').style.display = (isPanel || isAuto) ? 'none' : 'flex';
+    document.getElementById('holeDiaField').style.display = alignOn ? 'block' : 'none';
+    document.getElementById('holeModeField').style.display = alignOn ? 'block' : 'none';
+    document.getElementById('decompNote').textContent = isAuto
+      ? 'Auto-detect analyzes the model\u2019s geometry when you click Compute and picks Stacked Layers or Flat Panels automatically. You can always override it above.'
+      : (isPanel
+        ? 'Each panel is the flat outline of one face of the model. Cut them out and glue edge-to-edge like assembling a box — square corners meet as simple butt joints.'
+        : 'Each layer is a closed outline the height of one sheet of MDF; stack and glue them in order.');
+    document.getElementById('axisNote').textContent = isAuto
+      ? 'Slices run along the vertical (Z) axis. If you need a different orientation, use the rotate buttons above.'
+      : (isPanel
+        ? 'Works on any flat-faced (polyhedral) shape, not just cubes — curved or organic models will produce a lot of tiny panels instead. Try Stacked Layers for those.'
+        : 'Slices run along the vertical (Z) axis. If you need a different orientation, use the rotate buttons above.');
+    document.getElementById('sliceBtn').textContent = isAuto ? 'Compute (auto-detect)' : (isPanel ? 'Compute panels' : 'Compute slices');
+    // Fold-lines option only applies to panel mode
+    document.getElementById('foldLinesRow').style.display = isPanel ? 'flex' : 'none';
+    // Mirror option only applies to contour mode
+    document.getElementById('mirrorRow').style.display = isPanel ? 'none' : 'flex';
+    // Clear stale results so the old layers can't be used with the new mode
+    resetSliceResults();
+    // If switching to auto and we have a model, detect now so the note shows
+    if(isAuto && geometry){
+      detectAndShowNote();
+    } else {
+      document.getElementById('autoDetectNote').style.display = 'none';
+    }
+  });
+});
+
+// ---------- auto-detect decomposition mode ----------
+// Analyzes the model's triangle normals to decide whether it's "boxy"
+// (few distinct face orientations = use Flat Panels) or "organic"
+// (many orientations = use Stacked Layers). The metric: group coplanar
+// triangles into patches and count how many distinct patches there are
+// relative to total triangles. A box has ~6 patches covering all triangles;
+// a torus has hundreds/thousands of tiny patches.
+function detectDecompMode(){
+  if(!geometry) return { mode:'contour', reason:'No model loaded — defaulting to Stacked Layers.' };
+  const pos = geometry.attributes.position;
+  const triCount = pos.count/3;
+  if(triCount === 0) return { mode:'contour', reason:'Empty model — defaulting to Stacked Layers.' };
+
+  const bb = geometry.boundingBox;
+  const diag = bb.min.distanceTo(bb.max) || 1;
+  const posEps = diag*1e-5, planeEps = diag*1e-4, normalDotThresh = 0.999;
+
+  // Compute per-triangle normal + plane offset (d = n·v0)
+  const triNormals = [];
+  const triD = [];
+  for(let t=0; t<triCount; t++){
+    const i = t*3;
+    const v0 = new THREE.Vector3().fromBufferAttribute(pos, i);
+    const v1 = new THREE.Vector3().fromBufferAttribute(pos, i+1);
+    const v2 = new THREE.Vector3().fromBufferAttribute(pos, i+2);
+    const n = new THREE.Vector3().subVectors(v1, v0).cross(new THREE.Vector3().subVectors(v2, v0));
+    if(n.length() < 1e-12){ triNormals.push(null); triD.push(0); continue; }
+    n.normalize();
+    triNormals.push(n);
+    triD.push(n.dot(v0));
+  }
+
+  // Group coplanar triangles by (normal, d) using a quantized key
+  const groupKey = (n, d) => {
+    const nx = Math.round(n.x*1000)/1000;
+    const ny = Math.round(n.y*1000)/1000;
+    const nz = Math.round(n.z*1000)/1000;
+    const dd = Math.round(d/planeEps);
+    return nx + ',' + ny + ',' + nz + ',' + dd;
+  };
+  const groups = new Map(); // key -> { count, n, d }
+  for(let t=0; t<triCount; t++){
+    const n = triNormals[t];
+    if(!n) continue;
+    const k = groupKey(n, triD[t]);
+    if(!groups.has(k)) groups.set(k, { count:0, n, d:triD[t] });
+    groups.get(k).count++;
+  }
+
+  // Count distinct patches (coplanar groups). A box has ~6-12 (6 faces,
+  // possibly doubled for opposing normals); a torus has 100s-1000s.
+  const patchCount = groups.size;
+  // Average patch size: a box's 6 patches each cover ~16% of triangles;
+  // a torus's 500 patches each cover ~0.2%.
+  const avgPatchFraction = patchCount > 0 ? (1/patchCount) : 1;
+
+  // Decision logic:
+  // - Few patches (< 30) AND patches cover significant area each → boxy → panels
+  // - Many patches or tiny patches → organic → contour
+  const isBoxy = patchCount < 30 && avgPatchFraction > 0.02;
+
+  if(isBoxy){
+    return {
+      mode: 'panel',
+      reason: 'Auto-detected: <b>Flat Panels</b> \u2014 the model has ' + patchCount + ' distinct flat faces, so it\u2019s a boxy/polyhedral shape. Each face becomes one panel.'
+    };
+  } else {
+    return {
+      mode: 'contour',
+      reason: 'Auto-detected: <b>Stacked Layers</b> \u2014 the model has ' + patchCount + ' distinct surface patches (too many for practical flat-panel cutting), so it\u2019s a curved/organic shape. Horizontal slices will capture its form.'
+    };
+  }
+}
+
+function detectAndShowNote(){
+  const result = detectDecompMode();
+  resolvedDecompMode = result.mode;
+  const note = document.getElementById('autoDetectNote');
+  note.innerHTML = result.reason;
+  note.style.display = 'block';
+  // Update fold-lines/mirror visibility based on resolved mode (auto mode
+  // doesn't trigger the radio change handler, so we do it here)
+  const isPanel = resolvedDecompMode === 'panel';
+  document.getElementById('foldLinesRow').style.display = isPanel ? 'flex' : 'none';
+  document.getElementById('mirrorRow').style.display = isPanel ? 'none' : 'flex';
+  return result;
+}
+
+// Clear all slice/panel results and hide the dependent UI. Called when the
+// decomposition mode changes, when a new model is loaded, or when a computation
+// produces zero results — ensures stale data can never reach print/preview/export.
+function resetSliceResults(){
+  layers = [];
+  modelBoundsMM = null;
+  hiddenLayers.clear();
+  hideSlicePlane();
+  document.getElementById('layerbar').classList.remove('show');
+  document.getElementById('layerstrip').innerHTML = '';
+  document.getElementById('printRangeSection').style.display = 'none';
+  document.getElementById('printBtn').style.display = 'none';
+  document.getElementById('assemblyBtn').style.display = 'none';
+  document.getElementById('exportSvgBtn').style.display = 'none';
+  document.getElementById('exportSvgZipBtn').style.display = 'none';
+  document.getElementById('stats').style.display = 'none';
+}
+
+// ---------- three.js viewer ----------
+const viewerEl = document.getElementById('viewer');
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+renderer.setPixelRatio(window.devicePixelRatio);
+viewerEl.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 10000);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x1a1a1a, 1.1));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+dirLight.position.set(1,1,1);
+scene.add(dirLight);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+let meshObj = null;
+let slicePlaneHelper = null;
+let wireframeOn = false;
+let measureOn = false;
+let measurePoints = [];
+let measureMarkers = null;
+let measureLine = null;
+let hiddenLayers = new Set();
+
+// ---------- grid + ruler + overlays ----------
+let gridGroup = null;       // Group containing grid lines + labels
+let gridVisible = false;
+let rulerVisible = false;
+const toggleGridBtn = document.getElementById('toggleGrid');
+const toggleRulerBtn = document.getElementById('toggleRuler');
+const toggleWireBtn = document.getElementById('toggleWire');
+const toggleMeasureBtn = document.getElementById('toggleMeasure');
+const scaleBarEl = document.getElementById('scaleBar');
+const dimsReadoutEl = document.getElementById('dimsReadout');
+const dimsValEl = document.getElementById('dimsVal');
+const measureReadoutEl = document.getElementById('measureReadout');
+const measureValEl = document.getElementById('measureVal');
+const slicePlaneHintEl = document.getElementById('slicePlaneHint');
+const slicePlaneNumEl = document.getElementById('slicePlaneNum');
+
+toggleGridBtn.addEventListener('click', ()=>{ gridVisible=!gridVisible; toggleGridBtn.classList.toggle('on',gridVisible); rebuildGrid(); });
+toggleRulerBtn.addEventListener('click', ()=>{ rulerVisible=!rulerVisible; toggleRulerBtn.classList.toggle('on',rulerVisible); scaleBarEl.classList.toggle('show',rulerVisible); });
+toggleWireBtn.addEventListener('click', ()=>{ wireframeOn=!wireframeOn; toggleWireBtn.classList.toggle('on',wireframeOn); if(meshObj){ meshObj.material.wireframe = wireframeOn; } });
+toggleMeasureBtn.addEventListener('click', ()=>{ measureOn=!measureOn; toggleMeasureBtn.classList.toggle('on',measureOn); measureReadoutEl.classList.toggle('show',measureOn); if(!measureOn) clearMeasure(); });
+
+// ---------- axis gizmo (corner mini-scene) ----------
+let gizmoRenderer=null, gizmoScene=null, gizmoCamera=null;
+function initAxisGizmo(){
+  const el = document.getElementById('axisGizmo');
+  gizmoRenderer = new THREE.WebGLRenderer({ alpha:true, antialias:true });
+  gizmoRenderer.setPixelRatio(window.devicePixelRatio);
+  gizmoRenderer.setSize(70,70);
+  el.appendChild(gizmoRenderer.domElement);
+  gizmoScene = new THREE.Scene();
+  gizmoCamera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+  gizmoCamera.position.set(0,0,3);
+  gizmoCamera.up.set(0,0,1);
+  // Colored axes — X red, Y green, Z blue (three.js convention)
+  const axes = new THREE.Group();
+  const mkAxis = (dir, color, label) => {
+    const mat = new THREE.LineBasicMaterial({ color });
+    const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), dir.clone().multiplyScalar(0.8)]);
+    axes.add(new THREE.Line(geo, mat));
+    // Arrow head (small sphere)
+    const sph = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), new THREE.MeshBasicMaterial({ color }));
+    sph.position.copy(dir.clone().multiplyScalar(0.8));
+    axes.add(sph);
+    // Label via sprite
+    const cv = document.createElement('canvas'); cv.width=64; cv.height=64;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#'+color.toString(16).padStart(6,'0');
+    ctx.font = 'bold 40px monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(label, 32, 32);
+    const tex = new THREE.CanvasTexture(cv);
+    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:true }));
+    spr.position.copy(dir.clone().multiplyScalar(1.15));
+    spr.scale.set(0.4,0.4,1);
+    axes.add(spr);
+  };
+  mkAxis(new THREE.Vector3(1,0,0), 0xff5555, 'X');
+  mkAxis(new THREE.Vector3(0,1,0), 0x55ff55, 'Y');
+  mkAxis(new THREE.Vector3(0,0,1), 0x5599ff, 'Z');
+  gizmoScene.add(axes);
+}
+function updateGizmo(){
+  if(!gizmoScene) return;
+  // Mirror the main camera's orientation: gizmo camera looks along the same
+  // direction (relative to target) so the axes always match the viewer.
+  const dir = new THREE.Vector3().subVectors(camera.position, controls.target);
+  gizmoCamera.position.copy(dir.clone().normalize().multiplyScalar(3));
+  gizmoCamera.up.copy(camera.up);
+  gizmoCamera.lookAt(0,0,0);
+  gizmoRenderer.render(gizmoScene, gizmoCamera);
+}
+
+// ---------- dimensions overlay ----------
+function updateDims(){
+  if(!geometry){ dimsReadoutEl.classList.remove('show'); return; }
+  const bb = geometry.boundingBox;
+  const size = new THREE.Vector3(); bb.getSize(size);
+  const w = (size.x*scaleFactor).toFixed(0);
+  const d = (size.y*scaleFactor).toFixed(0);
+  const h = (size.z*scaleFactor).toFixed(0);
+  dimsValEl.textContent = w + ' \u00d7 ' + d + ' \u00d7 ' + h;
+  dimsReadoutEl.classList.add('show');
+}
+
+// ---------- adaptive grid with major/minor lines + labels ----------
+function niceCellMm(spanMm){
+  // Pick a cell size that yields roughly 8–16 cells across the span
+  const target = spanMm / 12;
+  const pow = Math.pow(10, Math.floor(Math.log10(target)));
+  const norm = target / pow;
+  let nice;
+  if(norm < 1.5) nice = 1;
+  else if(norm < 3) nice = 2;
+  else if(norm < 7) nice = 5;
+  else nice = 10;
+  return nice * pow;
+}
+
+function rebuildGrid(){
+  if(gridGroup){ scene.remove(gridGroup); gridGroup.traverse(o=>{ if(o.geometry) o.geometry.dispose(); if(o.material){ if(o.material.map) o.material.map.dispose(); o.material.dispose(); } }); gridGroup=null; }
+  if(!gridVisible || !geometry) return;
+  const bb = geometry.boundingBox;
+  const size = new THREE.Vector3(); bb.getSize(size);
+  const spanMm = Math.max(size.x, size.y) * scaleFactor;
+  const cellMm = niceCellMm(spanMm);
+  const cellNative = cellMm / scaleFactor;
+  const majorEvery = 5;
+  // Extend grid slightly beyond model footprint
+  const cx = (bb.min.x+bb.max.x)/2, cy = (bb.min.y+bb.max.y)/2;
+  const halfSpan = Math.ceil((Math.max(size.x,size.y)*0.75) / cellNative) * cellNative;
+  const baseZ = bb.min.z;
+  const lineCount = Math.round(halfSpan*2 / cellNative);
+  gridGroup = new THREE.Group();
+  const minorMat = new THREE.LineBasicMaterial({ color: 0x4f9d8f, transparent:true, opacity:0.25 });
+  const majorMat = new THREE.LineBasicMaterial({ color: 0xe8853a, transparent:true, opacity:0.6 });
+  for(let i=0; i<=lineCount; i++){
+    const v = -halfSpan + i*cellNative;
+    const isMajor = (i % majorEvery === 0);
+    const mat = isMajor ? majorMat : minorMat;
+    // Line parallel to X
+    const gx = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(cx-halfSpan, cy+v, baseZ),
+      new THREE.Vector3(cx+halfSpan, cy+v, baseZ)
+    ]);
+    gridGroup.add(new THREE.Line(gx, mat));
+    // Line parallel to Y
+    const gy = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(cx+v, cy-halfSpan, baseZ),
+      new THREE.Vector3(cx+v, cy+halfSpan, baseZ)
+    ]);
+    gridGroup.add(new THREE.Line(gy, mat));
+    // Numeric labels on major lines
+    if(isMajor){
+      const mmVal = (v * scaleFactor);
+      const lbl = Math.abs(mmVal) < 0.01 ? '0' : mmVal.toFixed(0);
+      const cv = document.createElement('canvas'); cv.width=64; cv.height=24;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = '#e8853a'; ctx.font = 'bold 16px monospace'; ctx.textAlign='left'; ctx.textBaseline='middle';
+      ctx.fillText(lbl, 4, 12);
+      const tex = new THREE.CanvasTexture(cv);
+      const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:true }));
+      spr.position.set(cx-halfSpan, cy+v, baseZ);
+      spr.scale.set(cellNative*2, cellNative*0.6, 1);
+      gridGroup.add(spr);
+    }
+  }
+  scene.add(gridGroup);
+}
+
+// Keep grid cell size adaptive as the user zooms: rebuild when the on-screen
+// pixel-per-mm changes by more than 2x (avoids rebuilds on every frame).
+let lastGridPpm = 0;
+function maybeRebuildGridForZoom(){
+  if(!gridVisible || !geometry) return;
+  const bb = geometry.boundingBox;
+  const baseZ = bb.min.z;
+  const native100 = 100/scaleFactor;
+  const p0 = new THREE.Vector3(0,0,baseZ).project(camera);
+  const p100 = new THREE.Vector3(native100,0,baseZ).project(camera);
+  const ppm = Math.abs((p100.x-p0.x)*0.5*viewerEl.clientWidth)/100;
+  if(ppm > 0 && (lastGridPpm===0 || ppm < lastGridPpm*0.5 || ppm > lastGridPpm*2)){
+    lastGridPpm = ppm;
+    rebuildGrid();
+  }
+}
+
+// ---------- scale bar (graduated, with tick marks) ----------
+function updateScaleBar(){
+  if(!rulerVisible || !geometry) return;
+  const bb = geometry.boundingBox;
+  const baseZ = bb.min.z;
+  const native100 = 100/scaleFactor;
+  const p0 = new THREE.Vector3(0,0,baseZ).project(camera);
+  const p100 = new THREE.Vector3(native100,0,baseZ).project(camera);
+  const w = viewerEl.clientWidth;
+  const pxPerMm = Math.abs((p100.x-p0.x)*0.5*w)/100;
+  if(pxPerMm <= 0) return;
+  const target = 110;
+  const raw = target/pxPerMm;
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw/pow;
+  let nice;
+  if(norm < 1.5) nice = 1;
+  else if(norm < 3) nice = 2;
+  else if(norm < 7) nice = 5;
+  else nice = 10;
+  const mm = nice*pow;
+  const px = Math.round(mm*pxPerMm);
+  // Build tick-marked bar
+  const ticks = 5;
+  let ticksHTML = '';
+  for(let i=0; i<=ticks; i++){
+    const tx = Math.round(px*i/ticks);
+    const val = Math.round(mm*i/ticks);
+    ticksHTML += `<div style="position:absolute;left:${tx}px;bottom:0;width:1px;height:5px;background:var(--accent);"></div>`;
+    ticksHTML += `<div style="position:absolute;left:${tx}px;bottom:6px;transform:translateX(-50%);font-size:8px;color:var(--ink);">${val}</div>`;
+  }
+  scaleBarEl.querySelector('.bar').style.width = px+'px';
+  scaleBarEl.querySelector('.bar').style.position = 'relative';
+  scaleBarEl.querySelector('.lbl').textContent = mm+'mm';
+  // Inject ticks once per bar rebuild
+  if(!scaleBarEl.querySelector('.ticks')){
+    const tickDiv = document.createElement('div');
+    tickDiv.className = 'ticks';
+    tickDiv.style.cssText = 'position:relative;height:18px;width:'+px+'px;';
+    scaleBarEl.insertBefore(tickDiv, scaleBarEl.querySelector('.lbl'));
+  }
+  scaleBarEl.querySelector('.ticks').innerHTML = ticksHTML;
+  scaleBarEl.querySelector('.ticks').style.width = px+'px';
+}
+
+// ---------- measure tool ----------
+const raycaster = new THREE.Raycaster();
+const mouseNDC = new THREE.Vector2();
+function clearMeasure(){
+  if(measureMarkers){ scene.remove(measureMarkers); measureMarkers.traverse(o=>{ if(o.geometry) o.geometry.dispose(); if(o.material) o.material.dispose(); }); measureMarkers=null; }
+  if(measureLine){ scene.remove(measureLine); measureLine.geometry.dispose(); measureLine.material.dispose(); measureLine=null; }
+  measurePoints = [];
+  measureValEl.textContent = '\u2013';
+}
+function addMeasurePoint(pt){
+  measurePoints.push(pt);
+  // Marker
+  const sph = new THREE.Mesh(new THREE.SphereGeometry(pt.length()*0.01, 12, 12), new THREE.MeshBasicMaterial({ color:0xe8853a }));
+  sph.position.copy(pt);
+  if(!measureMarkers){ measureMarkers = new THREE.Group(); scene.add(measureMarkers); }
+  measureMarkers.add(sph);
+  if(measurePoints.length === 2){
+    const a = measurePoints[0], b = measurePoints[1];
+    const distNative = a.distanceTo(b);
+    const distMm = distNative * scaleFactor;
+    measureValEl.textContent = distMm.toFixed(1) + 'mm';
+    const geo = new THREE.BufferGeometry().setFromPoints([a,b]);
+    measureLine = new THREE.Line(geo, new THREE.LineBasicMaterial({ color:0xe8853a }));
+    scene.add(measureLine);
+  }
+}
+renderer.domElement.addEventListener('click', (e)=>{
+  if(!measureOn || !meshObj) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouseNDC.x = ((e.clientX - rect.left)/rect.width)*2 - 1;
+  mouseNDC.y = -((e.clientY - rect.top)/rect.height)*2 + 1;
+  raycaster.setFromCamera(mouseNDC, camera);
+  const hits = raycaster.intersectObject(meshObj, false);
+  if(hits.length){
+    if(measurePoints.length >= 2) clearMeasure();
+    addMeasurePoint(hits[0].point);
+  }
+});
+
+// ---------- slice-plane preview on thumbnail hover ----------
+function showSlicePlane(layerIdx){
+  if(!geometry || resolvedDecompMode !== 'contour') return;
+  if(!layers[layerIdx]) return;
+  const zNative = layers[layerIdx].zNative;
+  if(typeof zNative !== 'number') return;
+  // Remove old
+  if(slicePlaneHelper){ scene.remove(slicePlaneHelper); slicePlaneHelper.geometry.dispose(); slicePlaneHelper.material.dispose(); slicePlaneHelper = null; }
+  const bb = geometry.boundingBox;
+  const sz = new THREE.Vector3(); bb.getSize(sz);
+  const span = Math.max(sz.x, sz.y) * 1.3;
+  const geo = new THREE.PlaneGeometry(span, span);
+  const mat = new THREE.MeshBasicMaterial({ color:0xe8853a, transparent:true, opacity:0.35, side:THREE.DoubleSide, depthWrite:false });
+  slicePlaneHelper = new THREE.Mesh(geo, mat);
+  slicePlaneHelper.position.set((bb.min.x+bb.max.x)/2, (bb.min.y+bb.max.y)/2, zNative);
+  scene.add(slicePlaneHelper);
+  // Add a bright border so the plane is visible even when mostly inside the model
+  const edgeGeo = new THREE.EdgesGeometry(geo);
+  const edgeMat = new THREE.LineBasicMaterial({ color:0xe8853a, linewidth:2 });
+  const edges = new THREE.LineSegments(edgeGeo, edgeMat);
+  edges.position.copy(slicePlaneHelper.position);
+  slicePlaneHelper.add(edges);
+  slicePlaneNumEl.textContent = (layerIdx+1);
+  slicePlaneHintEl.classList.add('show');
+}
+function hideSlicePlane(){
+  if(slicePlaneHelper){ scene.remove(slicePlaneHelper); slicePlaneHelper.geometry.dispose(); slicePlaneHelper.material.dispose(); slicePlaneHelper = null; }
+  slicePlaneHintEl.classList.remove('show');
+}
+
+// ---------- view presets ----------
+function setView(preset){
+  if(!geometry) return;
+  const bb = geometry.boundingBox;
+  const size = new THREE.Vector3(); bb.getSize(size);
+  const center = new THREE.Vector3(); bb.getCenter(center);
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const dist = maxDim * 2.5 + 0.001;
+  camera.up.set(0,0,1);
+  if(preset==='front'){
+    camera.position.set(center.x, center.y - dist, center.z);
+  } else if(preset==='top'){
+    camera.position.set(center.x, center.y, center.z + dist);
+    camera.up.set(0,-1,0);
+  } else { // iso
+    camera.position.set(center.x + dist*0.6, center.y - dist*0.9, center.z + dist*0.6);
+  }
+  camera.lookAt(center);
+  controls.target.copy(center);
+  controls.update();
+}
+document.getElementById('viewFront').addEventListener('click', ()=>setView('front'));
+document.getElementById('viewTop').addEventListener('click', ()=>setView('top'));
+document.getElementById('viewIso').addEventListener('click', ()=>setView('iso'));
+
+// ---------- 90° rotation ----------
+function rotateModel(axis){
+  if(!geometry) return;
+  const m = new THREE.Matrix4();
+  if(axis==='x') m.makeRotationX(Math.PI/2);
+  else if(axis==='y') m.makeRotationY(Math.PI/2);
+  else m.makeRotationZ(Math.PI/2);
+  geometry.applyMatrix4(m);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  setupModelView();
+}
+document.getElementById('rotX').addEventListener('click', ()=>rotateModel('x'));
+document.getElementById('rotY').addEventListener('click', ()=>rotateModel('y'));
+document.getElementById('rotZ').addEventListener('click', ()=>rotateModel('z'));
+
+// ---------- keyboard shortcuts ----------
+window.addEventListener('keydown', (e)=>{
+  if(e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+  const k = e.key.toLowerCase();
+  if(k==='g') toggleGridBtn.click();
+  else if(k==='r') toggleRulerBtn.click();
+  else if(k==='w') toggleWireBtn.click();
+  else if(k==='m') toggleMeasureBtn.click();
+  else if(k==='1') setView('front');
+  else if(k==='2') setView('top');
+  else if(k==='3') setView('iso');
+  else if(k==='escape'){ closeAssemblyPreview(); if(measureOn) clearMeasure(); }
+});
+
+function resizeViewer(){
+  const w = viewerEl.clientWidth, h = viewerEl.clientHeight;
+  if(w===0 || h===0) return;
+  renderer.setSize(w,h);
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resizeViewer);
+// ResizeObserver catches every container size change — including when #layerbar
+// appears/disappears, when the mobile address bar shows/hides, and when the
+// dropzone grows after a file is selected. window 'resize' alone misses these.
+// The callback is debounced via requestAnimationFrame: this both coalesces
+// multiple resize ticks into one layout pass and avoids the benign
+// "ResizeObserver loop completed with undelivered notifications" warning that
+// some browsers (notably Chrome) otherwise fire as a window error event.
+if(typeof ResizeObserver !== 'undefined'){
+  let rafId = null;
+  const ro = new ResizeObserver(()=>{
+    if(rafId !== null) cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(()=>{ rafId = null; resizeViewer(); });
+  });
+  ro.observe(viewerEl);
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+  if(rulerVisible) updateScaleBar();
+  if(gridVisible) maybeRebuildGridForZoom();
+  updateGizmo();
+}
+animate();
+initAxisGizmo();
+
+function frameCamera(bbox){
+  const size = new THREE.Vector3(); bbox.getSize(size);
+  const center = new THREE.Vector3(); bbox.getCenter(center);
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const dist = maxDim * 2.0 + 0.001;
+  camera.position.set(center.x + dist*0.6, center.y - dist*0.9, center.z + dist*0.6);
+  camera.up.set(0,0,1);
+  camera.lookAt(center);
+  controls.target.copy(center);
+  controls.update();
+}
+
+// ---------- file loading ----------
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+dropzone.addEventListener('click', ()=>fileInput.click());
+dropzone.addEventListener('dragover', e=>{e.preventDefault(); dropzone.classList.add('drag');});
+dropzone.addEventListener('dragleave', ()=>dropzone.classList.remove('drag'));
+dropzone.addEventListener('drop', e=>{
+  e.preventDefault(); dropzone.classList.remove('drag');
+  if(e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e=>{
+  if(e.target.files.length) loadFile(e.target.files[0]);
+});
+
+function loadFile(file){
+  if(!file.name.toLowerCase().endsWith('.stl')){ alert('Please upload an .stl file.'); return; }
+  document.getElementById('filename').textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = (ev)=>{
+    const loader = new STLLoader();
+    const geo = loader.parse(ev.target.result);
+    useGeometry(geo);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function useGeometry(geo){
+  geometry = geo.index ? geo.toNonIndexed() : geo;
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  setupModelView();
+  document.getElementById('sliceBtn').disabled = false;
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('viewHint').style.display = 'block';
+  updateDims();
+  // reset any previous slice results so stale layers can't be printed against a new model
+  resetSliceResults();
+  // If in auto mode, detect the best decomposition method for the new model
+  if(decompMode === 'auto') detectAndShowNote();
+}
+
+document.getElementById('loadExampleRing').addEventListener('click', ()=>{
+  // A torus: its ring cross-sections always contain an interior hole, which is the
+  // clearest way to show that hole outlines get cut as well as outer outlines.
+  // TorusGeometry is generated lying flat in the XY plane by default (hole axis along Z),
+  // which is exactly what we want: horizontal (Z) slices through the middle of the ring
+  // come out as an annulus (outer + inner loop), and slices near the top/bottom come out
+  // as two separate disjoint loops — a compact way to show both features at once.
+  const geo = new THREE.TorusGeometry(30, 18, 32, 64);
+  document.getElementById('filename').textContent = 'Example: ring model (generated, ~96mm wide, ~36mm tall)';
+  document.querySelector('input[name=scalemode][value=native]').checked = true;
+  document.getElementById('targetHeight').disabled = true;
+  useGeometry(geo);
+});
+
+document.getElementById('loadExampleBox').addEventListener('click', ()=>{
+  // A plain rectangular box: exactly six flat, mutually perpendicular faces —
+  // the clearest possible test case for Flat Panel mode. It also still works fine
+  // in Stacked Layers mode (every layer comes out as the same rectangle).
+  const geo = new THREE.BoxGeometry(80, 60, 50);
+  document.getElementById('filename').textContent = 'Example: box model (generated, 80\u00d760\u00d750mm)';
+  document.querySelector('input[name=scalemode][value=native]').checked = true;
+  document.getElementById('targetHeight').disabled = true;
+  useGeometry(geo);
+});
+
+// ---------- theme toggle (Auto follows the OS; Light/Dark force it) ----------
+const THEME_CYCLE = ['auto','light','dark'];
+const THEME_LABEL = {auto:'Auto', light:'Light', dark:'Dark'};
+const THEME_STORE_KEY = 'contourSlicer.theme';
+const themeBtn = document.getElementById('themeToggle');
+let themeIdx = 0;
+
+// Restore saved preference (defaults to 'auto' if never set or stored value invalid).
+(function initThemeIdx(){
+  try{
+    const saved = localStorage.getItem(THEME_STORE_KEY);
+    const idx = THEME_CYCLE.indexOf(saved);
+    themeIdx = idx >= 0 ? idx : 0;
+  }catch(_){ themeIdx = 0; } // localStorage may be unavailable (private mode, file://, etc.)
+})();
+
+function applyTheme(){
+  const mode = THEME_CYCLE[themeIdx];
+  if(mode==='auto') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', mode);
+  themeBtn.textContent = THEME_LABEL[mode];
+  themeBtn.setAttribute('aria-label', 'Theme: ' + mode + ' (click to change)');
+}
+themeBtn.addEventListener('click', ()=>{
+  themeIdx = (themeIdx+1) % THEME_CYCLE.length;
+  try{ localStorage.setItem(THEME_STORE_KEY, THEME_CYCLE[themeIdx]); }catch(_){}
+  applyTheme();
+});
+applyTheme();
+
+function setupModelView(){
+  if(meshObj){ scene.remove(meshObj); }
+  const mat = new THREE.MeshStandardMaterial({ color:0xe8853a, metalness:0.05, roughness:0.7, side:THREE.DoubleSide, wireframe:wireframeOn });
+  meshObj = new THREE.Mesh(geometry, mat);
+  scene.add(meshObj);
+  resizeViewer();
+  frameCamera(geometry.boundingBox);
+  updateScaleFactor();
+  lastGridPpm = 0;
+  rebuildGrid();
+  updateDims();
+}
+
+function updateScaleFactor(){
+  if(!geometry) return;
+  const bb = geometry.boundingBox;
+  const size = new THREE.Vector3(); bb.getSize(size);
+  const mode = document.querySelector('input[name=scalemode]:checked').value;
+  if(mode === 'native'){
+    scaleFactor = 1;
+  } else {
+    const target = parseFloat(document.getElementById('targetHeight').value) || 1;
+    scaleFactor = target / size.z;
+  }
+}
+
+document.querySelectorAll('input[name=scalemode]').forEach(r=>{
+  r.addEventListener('change', ()=>{
+    document.getElementById('targetHeight').disabled = document.querySelector('input[name=scalemode]:checked').value !== 'fit';
+    updateScaleFactor();
+    lastGridPpm = 0; rebuildGrid(); updateDims();
+  });
+});
+document.getElementById('targetHeight').addEventListener('input', ()=>{ updateScaleFactor(); lastGridPpm=0; rebuildGrid(); updateDims(); });
+
+// ---------- slicing engine ----------
+// Intersect one triangle with plane z=zc (in native units). Returns 0 or 2 points {x,y}.
+function triPlaneSeg(v0,v1,v2, zc){
+  const pts = [];
+  const edges = [[v0,v1],[v1,v2],[v2,v0]];
+  for(const [a,b] of edges){
+    const az=a.z, bz=b.z;
+    if((az<=zc && bz>zc) || (bz<=zc && az>zc)){
+      const t = (zc-az)/(bz-az);
+      pts.push({ x: a.x+(b.x-a.x)*t, y: a.y+(b.y-a.y)*t });
+    }
+  }
+  if(pts.length>=2) return [pts[0], pts[1]];
+  return null;
+}
+
+function sliceAtZ(zc){
+  const pos = geometry.attributes.position;
+  const segs = [];
+  const v0=new THREE.Vector3(), v1=new THREE.Vector3(), v2=new THREE.Vector3();
+  for(let i=0;i<pos.count;i+=3){
+    v0.fromBufferAttribute(pos,i); v1.fromBufferAttribute(pos,i+1); v2.fromBufferAttribute(pos,i+2);
+    const s = triPlaneSeg(v0,v1,v2,zc);
+    if(s) segs.push(s);
+  }
+  return stitchSegments(segs);
+}
+
+// Join line segments into closed polygon loops by matching nearby endpoints.
+function stitchSegments(segs){
+  const EPS = 1e-5;
+  const key = p => Math.round(p.x/EPS)+','+Math.round(p.y/EPS);
+  const adj = new Map(); // key -> [{p, segIdx, end}]
+  segs.forEach((s,idx)=>{
+    [0,1].forEach(end=>{
+      const k = key(s[end]);
+      if(!adj.has(k)) adj.set(k, []);
+      adj.get(k).push({segIdx:idx, end});
+    });
+  });
+  const used = new Array(segs.length).fill(false);
+  const loops = [];
+  for(let i=0;i<segs.length;i++){
+    if(used[i]) continue;
+    used[i]=true;
+    const loop = [segs[i][0], segs[i][1]];
+    let guard=0;
+    while(guard++ < segs.length+5){
+      const tailKey = key(loop[loop.length-1]);
+      const candidates = adj.get(tailKey) || [];
+      let found = null;
+      for(const c of candidates){
+        if(!used[c.segIdx]){ found = c; break; }
+      }
+      if(!found) break;
+      used[found.segIdx] = true;
+      const seg = segs[found.segIdx];
+      const nextPt = found.end===0 ? seg[1] : seg[0];
+      loop.push(nextPt);
+      const headKey = key(loop[0]);
+      if(key(loop[loop.length-1]) === headKey) break;
+    }
+    if(loop.length>=3) loops.push(loop);
+  }
+  return loops;
+}
+
+function polygonAreaAbs(loop){
+  let a=0;
+  for(let i=0;i<loop.length;i++){
+    const p=loop[i], q=loop[(i+1)%loop.length];
+    a += p.x*q.y - q.x*p.y;
+  }
+  return Math.abs(a/2);
+}
+
+function pointInLoops(pt, loops){
+  // even-odd rule across all loops of a layer
+  let inside=false;
+  for(const loop of loops){
+    let j = loop.length-1;
+    for(let i=0;i<loop.length;i++){
+      const pi=loop[i], pj=loop[j];
+      if( ((pi.y>pt.y)!==(pj.y>pt.y)) &&
+          (pt.x < (pj.x-pi.x)*(pt.y-pi.y)/(pj.y-pi.y)+pi.x) ){
+        inside = !inside;
+      }
+      j=i;
+    }
+  }
+  return inside;
+}
+
+function offsetLoopInward(loop, dist){
+  if(dist<=0) return loop;
+  // simple centroid-scale approximation, adequate for small kerf offsets
+  let cx=0,cy=0;
+  loop.forEach(p=>{cx+=p.x; cy+=p.y;});
+  cx/=loop.length; cy/=loop.length;
+  return loop.map(p=>{
+    const dx=p.x-cx, dy=p.y-cy;
+    const len=Math.hypot(dx,dy)||1;
+    const shrink = Math.max(0, (len-dist)/len);
+    return { x: cx+dx*shrink, y: cy+dy*shrink };
+  });
+}
+
+// ---------- flat-panel (planar face) decomposition ----------
+// Groups connected, coplanar triangles into patches, traces each patch's outer
+// boundary (and any interior holes) the same way sliceAtZ traces a cross-section,
+// then flattens that boundary into 2D using an in-plane basis. Good for boxy /
+// polyhedral models; curved surfaces will fragment into many tiny patches.
+function stitchSegments3D(segs, eps){
+  const key = p => Math.round(p.x/eps)+','+Math.round(p.y/eps)+','+Math.round(p.z/eps);
+  const adj = new Map();
+  segs.forEach((s,idx)=>{
+    [0,1].forEach(end=>{
+      const k = key(s[end]);
+      if(!adj.has(k)) adj.set(k, []);
+      adj.get(k).push({segIdx:idx, end});
+    });
+  });
+  const used = new Array(segs.length).fill(false);
+  const loops = [];
+  for(let i=0;i<segs.length;i++){
+    if(used[i]) continue;
+    used[i]=true;
+    const loop = [segs[i][0], segs[i][1]];
+    let guard=0;
+    while(guard++ < segs.length+5){
+      const tailKey = key(loop[loop.length-1]);
+      const candidates = adj.get(tailKey) || [];
+      let found = null;
+      for(const c of candidates){ if(!used[c.segIdx]){ found = c; break; } }
+      if(!found) break;
+      used[found.segIdx] = true;
+      const seg = segs[found.segIdx];
+      loop.push(found.end===0 ? seg[1] : seg[0]);
+      if(key(loop[loop.length-1]) === key(loop[0])) break;
+    }
+    if(loop.length>=3) loops.push(loop);
+  }
+  return loops;
+}
+
+function buildPanels(){
+  const pos = geometry.attributes.position;
+  const triCount = pos.count/3;
+  const bb = geometry.boundingBox;
+  const diag = bb.min.distanceTo(bb.max) || 1;
+  const posEps = diag*1e-5, planeEps = diag*1e-4, normalDotThresh = 0.999;
+
+  const tris = [];
+  for(let t=0;t<triCount;t++){
+    const i=t*3;
+    const v0=new THREE.Vector3().fromBufferAttribute(pos,i);
+    const v1=new THREE.Vector3().fromBufferAttribute(pos,i+1);
+    const v2=new THREE.Vector3().fromBufferAttribute(pos,i+2);
+    const n = new THREE.Vector3().subVectors(v1,v0).cross(new THREE.Vector3().subVectors(v2,v0));
+    if(n.length() < 1e-12){ tris.push(null); continue; }
+    n.normalize();
+    tris.push({ v:[v0,v1,v2], n, d: n.dot(v0) });
+  }
+
+  const pkey = p => Math.round(p.x/posEps)+','+Math.round(p.y/posEps)+','+Math.round(p.z/posEps);
+  const ekey = (a,b) => { const ka=pkey(a), kb=pkey(b); return ka<kb ? ka+'|'+kb : kb+'|'+ka; };
+
+  const edgeMap = new Map();
+  tris.forEach((tri,ti)=>{
+    if(!tri) return;
+    [[tri.v[0],tri.v[1]],[tri.v[1],tri.v[2]],[tri.v[2],tri.v[0]]].forEach(pair=>{
+      const k = ekey(pair[0], pair[1]);
+      if(!edgeMap.has(k)) edgeMap.set(k, []);
+      edgeMap.get(k).push(ti);
+    });
+  });
+
+  const visited = new Array(tris.length).fill(false);
+  const patches = [];
+  for(let ti=0; ti<tris.length; ti++){
+    if(visited[ti] || !tris[ti]) continue;
+    const patch = []; const queue=[ti]; visited[ti]=true;
+    const baseN = tris[ti].n, baseD = tris[ti].d;
+    while(queue.length){
+      const cur = queue.pop();
+      patch.push(cur);
+      const tri = tris[cur];
+      for(const pair of [[tri.v[0],tri.v[1]],[tri.v[1],tri.v[2]],[tri.v[2],tri.v[0]]]){
+        const k = ekey(pair[0], pair[1]);
+        for(const oti of (edgeMap.get(k) || [])){
+          if(oti===cur || visited[oti] || !tris[oti]) continue;
+          const ot = tris[oti];
+          if(ot.n.dot(baseN) > normalDotThresh && Math.abs(ot.d-baseD) < planeEps){
+            visited[oti]=true; queue.push(oti);
+          }
+        }
+      }
+    }
+    patches.push({ triIdx: patch, n: baseN, d: baseD });
+  }
+
+  const panels = [];
+  patches.forEach(patch=>{
+    const edgeCount = new Map();
+    patch.triIdx.forEach(ti=>{
+      const tri = tris[ti];
+      [[tri.v[0],tri.v[1]],[tri.v[1],tri.v[2]],[tri.v[2],tri.v[0]]].forEach(pair=>{
+        const k = ekey(pair[0], pair[1]);
+        edgeCount.set(k, (edgeCount.get(k)||0)+1);
+      });
+    });
+    const boundarySegs = [];
+    patch.triIdx.forEach(ti=>{
+      const tri = tris[ti];
+      [[tri.v[0],tri.v[1]],[tri.v[1],tri.v[2]],[tri.v[2],tri.v[0]]].forEach(pair=>{
+        const k = ekey(pair[0], pair[1]);
+        if(edgeCount.get(k)===1) boundarySegs.push([pair[0], pair[1]]);
+      });
+    });
+    if(boundarySegs.length < 3) return;
+    const loops3D = stitchSegments3D(boundarySegs, posEps);
+    if(!loops3D.length) return;
+
+    const n = patch.n;
+    const up = Math.abs(n.z) < 0.9 ? new THREE.Vector3(0,0,1) : new THREE.Vector3(1,0,0);
+    const u = new THREE.Vector3().crossVectors(up, n).normalize();
+    const v = new THREE.Vector3().crossVectors(n, u).normalize();
+    const origin = loops3D[0][0];
+
+    const loops2D = loops3D.map(loop => loop.map(p=>{
+      const rel = new THREE.Vector3(p.x-origin.x, p.y-origin.y, p.z-origin.z);
+      return { x: rel.dot(u)*scaleFactor, y: rel.dot(v)*scaleFactor };
+    }));
+    const kerf = parseFloat(document.getElementById('kerf').value) || 0;
+    const finalLoops = loops2D.map(loop => offsetLoopInward(loop, kerf/2));
+    const area = finalLoops.reduce((s,l)=>s+polygonAreaAbs(l), 0);
+    panels.push({ loops: finalLoops, area });
+  });
+
+  panels.sort((a,b)=> b.area - a.area);
+  return panels;
+}
+
+document.getElementById('sliceBtn').addEventListener('click', ()=>{
+  if(!geometry) return;
+  updateScaleFactor();
+  const thickness = parseFloat(document.getElementById('thickness').value) || 6;
+
+  // Resolve auto mode: detect the best method now (also refreshes the note)
+  if(decompMode === 'auto'){
+    const result = detectAndShowNote();
+    resolvedDecompMode = result.mode;
+  } else {
+    resolvedDecompMode = decompMode;
+  }
+  const usePanel = resolvedDecompMode === 'panel';
+
+  if(usePanel){
+    layers = buildPanels();
+    // A curved model (like the torus example) has no large flat faces, so every
+    // tiny triangle becomes its own "panel" — easily 1000+ pieces. That's
+    // mathematically correct but completely impractical to cut. Warn the user
+    // and give them a chance to switch to Stacked Layers instead.
+    if(layers.length > 50){
+      const proceed = confirm(
+        'This model produced ' + layers.length + ' flat panels.\n\n' +
+        'That is a lot — it usually means the model is curved or organic, and ' +
+        'Flat Panels mode is fragmenting it into tiny pieces. Cutting and assembling ' +
+        'this many panels is impractical.\n\n' +
+        'For curved or rounded shapes, Stacked Layers mode gives far better results ' +
+        '(fewer, larger pieces that stack into the 3D shape).\n\n' +
+        'Click OK to keep these ' + layers.length + ' panels, or Cancel to switch modes.'
+      );
+      if(!proceed){
+        resetSliceResults();
+        // Switch back to stacked layers mode for convenience
+        document.querySelector('input[name=decompmode][value=contour]').checked = true;
+        decompMode = 'contour';
+        resolvedDecompMode = 'contour';
+        document.getElementById('sliceBtn').textContent = 'Compute slices';
+        document.getElementById('alignHolesRow').style.display = 'flex';
+        document.getElementById('decompNote').textContent = 'Each layer is a closed outline the height of one sheet of MDF; stack and glue them in order.';
+        document.getElementById('axisNote').textContent = 'Slices run along the vertical (Z) axis. If you need a different orientation, use the rotate buttons above.';
+        document.getElementById('autoDetectNote').style.display = 'none';
+        return;
+      }
+    }
+  } else {
+    const kerf = parseFloat(document.getElementById('kerf').value) || 0;
+    const bb = geometry.boundingBox;
+    const minZ = bb.min.z, maxZ = bb.max.z;
+    const stepNative = thickness / scaleFactor;
+    layers = [];
+    let z = minZ + stepNative/2;
+    while(z < maxZ){
+      const rawLoops = sliceAtZ(z);
+      if(rawLoops.length){
+        const mmLoops = rawLoops.map(loop=>{
+          const scaled = loop.map(p=>({x:p.x*scaleFactor, y:p.y*scaleFactor}));
+          return offsetLoopInward(scaled, kerf/2);
+        });
+        layers.push({ zNative:z, loops: mmLoops });
+      }
+      z += stepNative;
+    }
+  }
+
+  if(!layers.length){
+    alert(usePanel
+      ? 'No flat panels were found. This model may be entirely curved — try Stacked Layers instead.'
+      : 'No cross-sections were found. Check that the model has some height along Z.');
+    resetSliceResults();
+    return;
+  }
+
+  // overall mm bounds across all pieces (for consistent alignment hole placement)
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  layers.forEach(l=> l.loops.forEach(loop=> loop.forEach(p=>{
+    if(p.x<minX)minX=p.x; if(p.x>maxX)maxX=p.x;
+    if(p.y<minY)minY=p.y; if(p.y>maxY)maxY=p.y;
+  })));
+  modelBoundsMM = {minX,maxX,minY,maxY};
+
+  document.getElementById('layerbarHeading').textContent = usePanel
+    ? `Panel preview (${layers.length} flat faces)`
+    : 'Layer preview (bottom \u2192 top)';
+
+  const rf = document.getElementById('rangeFrom'), rt = document.getElementById('rangeTo');
+  rf.min = 1; rf.max = layers.length; rf.value = 1;
+  rt.min = 1; rt.max = layers.length; rt.value = layers.length;
+  document.getElementById('rangeFromLabel').textContent = usePanel ? 'From panel #' : 'From layer #';
+  document.getElementById('rangeToLabel').textContent = usePanel ? 'To panel #' : 'To layer #';
+  document.getElementById('printRangeSection').style.display = 'block';
+
+  renderLayerStrip();
+  updateStats(thickness);
+  document.getElementById('printBtn').style.display = 'block';
+  document.getElementById('assemblyBtn').style.display = 'block';
+  document.getElementById('exportSvgBtn').style.display = 'block';
+  document.getElementById('exportSvgZipBtn').style.display = 'block';
+});
+
+function clampInt(v,min,max){ return Math.min(Math.max(Math.round(v),min),max); }
+
+function getPrintRange(){
+  const rf = document.getElementById('rangeFrom'), rt = document.getElementById('rangeTo');
+  if(!layers.length) return {from:1, to:0};
+  // When mirrored, only the first half of layers are printed (the other half
+  // is made by flipping the stack). Adjust the effective layer count.
+  const isMirrored = resolvedDecompMode === 'contour' && document.getElementById('mirrorHalf').checked;
+  const effCount = isMirrored ? Math.ceil(layers.length / 2) : layers.length;
+  let from = clampInt(parseInt(rf.value)||1, 1, effCount);
+  let to = clampInt(parseInt(rt.value)||effCount, 1, effCount);
+  if(to < from) to = from;
+  return {from, to};
+}
+
+function updateStats(thickness){
+  const s = getPrintScale();
+  document.getElementById('stats').style.display = 'grid';
+  const isMirrored = document.getElementById('mirrorHalf').checked;
+  const displayLayers = isMirrored && resolvedDecompMode==='contour' ? Math.ceil(layers.length/2) : layers.length;
+  document.getElementById('statLayers').textContent = displayLayers;
+  document.querySelector('#stats .stat:nth-child(1) .l').textContent = resolvedDecompMode==='panel' ? 'panels' : (isMirrored ? 'layers (×2)' : 'layers');
+
+  let totalArea = 0;
+  layers.forEach(l=>{
+    let pieceArea = 0;
+    l.loops.forEach(loop=>{ pieceArea += polygonAreaAbs(loop); });
+    totalArea += pieceArea;
+  });
+  // Area scales with the square of the print scale
+  const scaledArea = totalArea*s*s;
+  document.getElementById('statArea').textContent = (scaledArea/1e6).toFixed(2)+'m\u00B2';
+
+  // Material estimator: how many standard MDF sheets needed (with 20% waste factor)
+  const sheet = getSheetMM();
+  const sheetArea = sheet.w * sheet.h;
+  const wasteFactor = 1.2;
+  const sheetsNeeded = Math.ceil((scaledArea * wasteFactor) / sheetArea);
+  document.getElementById('statSheets').textContent = sheetsNeeded;
+  document.getElementById('statSheetsWrap').style.display = scaledArea > 0 ? 'block' : 'none';
+
+  const heightStat = document.getElementById('statHeight');
+  const heightLabel = document.querySelector('#stats .stat:nth-child(4) .l');
+  const dowelWrap = document.getElementById('statDowelWrap');
+  const dowelStat = document.getElementById('statDowel');
+  if(resolvedDecompMode==='panel'){
+    heightLabel.textContent = 'avg panel size';
+    const avgCm2 = (totalArea*s*s/layers.length)/100;
+    heightStat.textContent = avgCm2.toFixed(0)+'cm\u00B2';
+    dowelWrap.style.display = 'none';
+  } else {
+    heightLabel.textContent = 'final stack height';
+    const stackH = layers.length*thickness;
+    heightStat.textContent = stackH.toFixed(0)+'mm';
+    // Dowel rod length: stack height + 20mm handling margin each end
+    const alignOn = document.getElementById('alignHoles').checked;
+    if(alignOn){
+      dowelStat.textContent = (stackH + 40)+'mm';
+      dowelWrap.style.display = 'block';
+    } else {
+      dowelWrap.style.display = 'none';
+    }
+  }
+
+  recomputePageStat();
+}
+
+// ---------- material estimator helpers ----------
+function getSheetMM(){
+  const v = document.getElementById('sheetSize').value;
+  if(v === 'custom'){
+    return { w: parseFloat(document.getElementById('sheetW').value)||2440, h: parseFloat(document.getElementById('sheetH').value)||1220 };
+  }
+  const [w, h] = v.split('x').map(Number);
+  return { w, h };
+}
+document.getElementById('sheetSize').addEventListener('change', (e)=>{
+  document.getElementById('customSheetField').style.display = e.target.value === 'custom' ? 'block' : 'none';
+  if(layers.length) updateStats(parseFloat(document.getElementById('thickness').value)||6);
+});
+document.getElementById('sheetW').addEventListener('input', ()=>{ if(layers.length) updateStats(parseFloat(document.getElementById('thickness').value)||6); });
+document.getElementById('sheetH').addEventListener('input', ()=>{ if(layers.length) updateStats(parseFloat(document.getElementById('thickness').value)||6); });
+document.getElementById('mirrorHalf').addEventListener('change', ()=>{
+  if(layers.length){
+    // Update the range inputs' max to reflect the halved layer count
+    const isMirrored = document.getElementById('mirrorHalf').checked;
+    const effCount = isMirrored ? Math.ceil(layers.length / 2) : layers.length;
+    const rf = document.getElementById('rangeFrom'), rt = document.getElementById('rangeTo');
+    rf.max = effCount; rt.max = effCount;
+    if(parseInt(rf.value) > effCount) rf.value = effCount;
+    if(parseInt(rt.value) > effCount) rt.value = effCount;
+    updateStats(parseFloat(document.getElementById('thickness').value)||6);
+    recomputePageStat();
+  }
+});
+document.getElementById('alignHoles').addEventListener('change', (e)=>{
+  const on = e.target.checked;
+  document.getElementById('holeDiaField').style.display = on ? 'block' : 'none';
+  document.getElementById('holeModeField').style.display = on ? 'block' : 'none';
+  if(layers.length) updateStats(parseFloat(document.getElementById('thickness').value)||6);
+});
+
+function recomputePageStat(){
+  if(!layers.length) return;
+  const { pages } = getPrintLayout();
+  let count = pages.length;
+  if(document.getElementById('includeCover').checked) count += 2;
+  document.getElementById('statPages').textContent = count;
+}
+
+['rangeFrom','rangeTo','includeCover','overlap','paperSize','shapeSpacing','printScale'].forEach(id=>{
+  const el = document.getElementById(id);
+  if(el){
+    el.addEventListener('input', recomputePageStat);
+    el.addEventListener('change', recomputePageStat);
+  }
+});
+
+function getPaperMM(){
+  const v = document.getElementById('paperSize').value;
+  return v==='letter' ? {w:215.9,h:279.4} : {w:210,h:297};
+}
+
+// ---------- print scale ----------
+// A global output scale (default 100%) that shrinks or enlarges every cut
+// outline proportionally. Useful for making miniature mockups (50%) or
+// enlarging a small model (200%) without going back to re-slice.
+function getPrintScale(){
+  const v = parseFloat(document.getElementById('printScale').value);
+  return (isFinite(v) && v > 0) ? v / 100 : 1;
+}
+function setPrintScalePct(pct){
+  document.getElementById('printScale').value = pct;
+  onPrintScaleChange();
+}
+function onPrintScaleChange(){
+  const pct = Math.round(getPrintScale()*100);
+  document.getElementById('scaleNotePct').textContent = pct + '%';
+  if(layers.length){
+    recomputePageStat();
+    updateStats(parseFloat(document.getElementById('thickness').value)||6);
+  }
+}
+document.getElementById('printScale').addEventListener('input', onPrintScaleChange);
+document.getElementById('printScale').addEventListener('change', onPrintScaleChange);
+document.getElementById('printScaleHalf').addEventListener('click', ()=>setPrintScalePct(50));
+document.getElementById('printScaleFull').addEventListener('click', ()=>setPrintScalePct(100));
+document.getElementById('printScaleDouble').addEventListener('click', ()=>setPrintScalePct(200));
+
+// Returns a NEW array of layers with all loop coordinates multiplied by the
+// print scale. The original `layers` array is untouched so the 3D viewer and
+// slice-plane preview keep working in model-native coordinates.
+// If mirror mode is on (contour only), returns only the first half of layers —
+// the user cuts these and flips the stack to form the second half.
+function getScaledLayers(){
+  const s = getPrintScale();
+  const isMirrored = resolvedDecompMode === 'contour' && document.getElementById('mirrorHalf').checked;
+  let src = layers;
+  if(isMirrored){
+    const half = Math.ceil(layers.length / 2);
+    src = layers.slice(0, half);
+  }
+  if(s === 1) return src;
+  return src.map(l => ({
+    zNative: l.zNative,
+    loops: l.loops.map(loop => loop.map(p => ({ x: p.x*s, y: p.y*s })))
+  }));
+}
+// Scaled model bounds (for hole placement + assembly preview centering)
+function getScaledModelBounds(){
+  const s = getPrintScale();
+  if(s === 1) return modelBoundsMM;
+  return {
+    minX: modelBoundsMM.minX*s, maxX: modelBoundsMM.maxX*s,
+    minY: modelBoundsMM.minY*s, maxY: modelBoundsMM.maxY*s
+  };
+}
+
+// Bounding box of a single layer's loops (in mm).
+function layerBounds(layer){
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  layer.loops.forEach(loop=>loop.forEach(p=>{
+    if(p.x<minX)minX=p.x; if(p.x>maxX)maxX=p.x;
+    if(p.y<minY)minY=p.y; if(p.y>maxY)maxY=p.y;
+  }));
+  return { minX, maxX, minY, maxY, w: Math.max(1,maxX-minX), h: Math.max(1,maxY-minY) };
+}
+
+// Bin-pack layers into pages. Small layers are packed multiple-per-page (shelf
+// packing); layers too big for one page are tiled across pages with overlap.
+// Returns { pages, paper, margin, labelH, contentW, contentH }.
+// Each page is either:
+//   { placements: [{layerIdx, dx, dy, w, h, minLayerX, maxLayerY}], tiled: null }
+//   { placements: [], tiled: {layerIdx, row, col, tilesX, tilesY, ...} }
+function getPrintLayout(){
+  const paper = getPaperMM();
+  const overlap = parseFloat(document.getElementById('overlap').value)||15;
+  const gap = parseFloat(document.getElementById('shapeSpacing').value)||8;
+  const margin = 8;
+  const labelH = 8;
+  const contentW = paper.w - margin*2;
+  const contentH = paper.h - margin*2 - labelH;
+  const {from, to} = getPrintRange();
+  const scaledLayers = getScaledLayers();
+  const pages = [];
+
+  let curPage = null, curX = 0, curY = 0, rowH = 0;
+  function newPage(){ curPage = { placements: [], tiled: null }; pages.push(curPage); curX=0; curY=0; rowH=0; }
+
+  for(let li=from-1; li<=to-1; li++){
+    const layer = scaledLayers[li];
+    const bb = layerBounds(layer);
+
+    if(bb.w > contentW || bb.h > contentH){
+      // Oversized — tile across pages (each tile gets its own page)
+      curPage = null;
+      const stepX = Math.max(1, contentW - overlap);
+      const stepY = Math.max(1, contentH - overlap);
+      const tilesX = Math.max(1, Math.ceil((bb.w - overlap) / stepX));
+      const tilesY = Math.max(1, Math.ceil((bb.h - overlap) / stepY));
+      const totalPages = tilesX * tilesY;
+      let pn = 0;
+      for(let row=0; row<tilesY; row++){
+        for(let col=0; col<tilesX; col++){
+          pn++;
+          pages.push({
+            placements: [],
+            tiled: {
+              layerIdx: li, row, col, tilesX, tilesY, totalPages, pageNum: pn,
+              tileOriginX: bb.minX + col*stepX, tileOriginY: bb.minY + row*stepY,
+              stepX, stepY
+            }
+          });
+        }
+      }
+      continue;
+    }
+
+    const pw = bb.w + gap, ph = bb.h + gap;
+    if(!curPage) newPage();
+    // Does it fit on the current row?
+    if(curX + pw > contentW){
+      curY += rowH;
+      curX = 0;
+      rowH = 0;
+      if(curY + ph > contentH) newPage();
+    }
+    curPage.placements.push({
+      layerIdx: li, dx: curX, dy: curY, w: bb.w, h: bb.h,
+      minLayerX: bb.minX, maxLayerY: bb.maxY
+    });
+    curX += pw;
+    rowH = Math.max(rowH, ph);
+  }
+  return { pages, paper, margin, labelH, contentW, contentH };
+}
+
+// ---------- layer strip thumbnails ----------
+function loopsToPath(loops, minX,minY,w,h, pad, size){
+  const scale = (size-pad*2) / Math.max(w,h,1);
+  return loops.map(loop=>{
+    const d = loop.map((p,i)=> (i===0?'M':'L') + ((p.x-minX)*scale+pad).toFixed(1) + ' ' + (size-((p.y-minY)*scale+pad)).toFixed(1)).join(' ') + ' Z';
+    return d;
+  }).join(' ');
+}
+
+function renderLayerStrip(){
+  const strip = document.getElementById('layerstrip');
+  strip.innerHTML='';
+  const {minX,maxX,minY,maxY} = modelBoundsMM;
+  const w=maxX-minX, h=maxY-minY;
+  layers.forEach((l,idx)=>{
+    const chip = document.createElement('div');
+    chip.className='layerchip';
+    if(hiddenLayers.has(idx)) chip.classList.add('hidden');
+    const d = loopsToPath(l.loops, minX, minY, w, h, 3, 44);
+    chip.innerHTML = `<svg viewBox="0 0 44 44"><path d="${d}" fill="#e8853a" fill-opacity="0.25" stroke="#e8853a" stroke-width="1" fill-rule="evenodd"/></svg><span class="num">${idx+1}</span>`;
+    chip.title = `Layer ${idx+1} — click to hide/show, hover to preview slice plane`;
+    chip.addEventListener('mouseenter', ()=> showSlicePlane(idx));
+    chip.addEventListener('mouseleave', ()=> hideSlicePlane());
+    chip.addEventListener('click', ()=>{
+      if(hiddenLayers.has(idx)){ hiddenLayers.delete(idx); chip.classList.remove('hidden'); }
+      else { hiddenLayers.add(idx); chip.classList.add('hidden'); }
+    });
+    strip.appendChild(chip);
+  });
+  document.getElementById('layerbar').classList.add('show');
+}
+
+// ---------- print templates ----------
+document.getElementById('printBtn').addEventListener('click', buildPrintView);
+
+function buildPrintView(){
+  if(!layers.length || !modelBoundsMM){ alert('Compute slices first.'); return; }
+  const root = document.getElementById('printRoot');
+  root.innerHTML = '';
+  const thickness = parseFloat(document.getElementById('thickness').value)||6;
+  const alignOn = resolvedDecompMode==='contour' && document.getElementById('alignHoles').checked;
+  const holeDia = parseFloat(document.getElementById('holeDia').value)||8;
+  const holeMode = document.getElementById('holeMode').value || 'center';
+  const printScale = getPrintScale();
+  const scaledLayers = getScaledLayers();
+  const mb = getScaledModelBounds();
+  const centerX = (mb.minX+mb.maxX)/2;
+  const centerY = (mb.minY+mb.maxY)/2;
+  // Corner holes: inset from scaled model bounding box edges
+  const cornerInset = Math.max(holeDia * 1.5, 12);
+  const cornerHoles = [
+    { x: mb.minX + cornerInset, y: mb.minY + cornerInset },
+    { x: mb.maxX - cornerInset, y: mb.minY + cornerInset },
+    { x: mb.minX + cornerInset, y: mb.maxY - cornerInset },
+    { x: mb.maxX - cornerInset, y: mb.maxY - cornerInset },
+  ];
+  function getHolePoints(layer){
+    if(holeMode === 'corners') return cornerHoles.filter(p => pointInLoops(p, layer.loops));
+    // center
+    return pointInLoops({x:centerX,y:centerY}, layer.loops) ? [{x:centerX,y:centerY}] : [];
+  }
+  const includeCover = document.getElementById('includeCover').checked;
+  const pieceWord = resolvedDecompMode==='panel' ? 'panel' : 'layer';
+  const pieceWordCap = resolvedDecompMode==='panel' ? 'PANEL' : 'LAYER';
+  const {from, to} = getPrintRange();
+  const { pages, paper, margin, contentW, contentH } = getPrintLayout();
+  const scalePct = Math.round(printScale*100);
+  const isMirrored = resolvedDecompMode === 'contour' && document.getElementById('mirrorHalf').checked;
+  const printedLayerCount = isMirrored ? Math.ceil(layers.length / 2) : layers.length;
+
+  // stylesheet for exact paper size
+  const style = document.createElement('style');
+  style.textContent = `@page{ size: ${paper.w}mm ${paper.h}mm; margin:0; } .pv-page{ width:${paper.w}mm; height:${paper.h}mm; }`;
+  root.appendChild(style);
+
+  if(includeCover){
+    const cover = document.createElement('div');
+    cover.className='pv-page pv-cover';
+    const assemblySteps = resolvedDecompMode==='panel'
+      ? `<li>Small panels are packed multiple-per-page; panels larger than one page are tiled with overlap.</li>
+         <li>Spray-mount or glue-stick each panel's paper template onto a sheet of ${thickness}mm MDF.</li>
+         <li>Cut along the solid outline with a jigsaw or scroll saw. Cut any interior (hole) outlines too.</li>
+         <li>For tiled panels, trim along the overlap line and tape adjacent sheets together first.</li>
+         <li>Dry-fit all panels edge-to-edge like assembling a box before gluing. Corners meet as simple butt joints.</li>
+         <li>Glue one seam at a time, using masking tape as a clamp, and let it set before moving to the next edge.</li>`
+      : `<li>Small layers are packed multiple-per-page; layers larger than one page are tiled with overlap — for those, trim and tape adjacent sheets together, matching the alignment crosses.</li>
+         <li>Spray-mount or glue-stick each layer's paper template onto a sheet of ${thickness}mm MDF.</li>
+         <li>Cut along the solid outline with a jigsaw or scroll saw. Cut any interior (hole) outlines too.</li>
+         ${alignOn?`<li>Drill the marked ${holeDia}mm alignment hole through the center of each piece before removing the paper.</li>`:''}
+         <li>Stack layers in numeric order (1 = bottom).${alignOn?' Thread a dowel rod through the alignment holes to keep the stack registered while the glue sets.':''} Glue between layers, clamp, then sand the stepped edge smooth or leave it faceted.</li>`;
+    cover.innerHTML = `
+      <h1>Contour Slicer — Cut Sheet</h1>
+      <p><b>${printedLayerCount} ${pieceWord}s${isMirrored ? ' (×2, mirrored)' : ''}</b> &middot; ${thickness}mm MDF &middot; ${resolvedDecompMode==='panel' ? 'flat-panel assembly' : `final stack height ${(layers.length*thickness).toFixed(0)}mm`} &middot; paper: ${paper.w===210?'A4':'US Letter'} &middot; ${pages.length} page${pages.length===1?'':'s'}${scalePct!==100?` &middot; <b>print scale ${scalePct}%</b>`:''}${(from>1||to<printedLayerCount)?` &middot; printing ${pieceWord}s ${from}\u2013${to} only`:''}</p>
+      <ol>
+        <li>Print every page at <b>100% scale / no "fit to page"</b>${scalePct!==100?` — the ${scalePct}% scaling is already baked into these templates, so do NOT apply it again in the print dialog`:''} — verify by measuring the ruler mark on page 2.</li>
+        ${assemblySteps}
+        ${isMirrored ? `<li><b>Mirror mode:</b> Cut these ${printedLayerCount} ${pieceWord}s, then stack and glue them in order (1 = bottom). Flip the entire stack over and glue the same ${pieceWord}s on top in reverse order (${printedLayerCount} = top) to form the full ${layers.length}-layer symmetric shape. The bold numbers inside each outline are visible through the paper — trace them onto the MDF with a marker before peeling.</li>` : ''}
+      </ol>
+    `;
+    root.appendChild(cover);
+
+    const ruler = document.createElement('div');
+    ruler.className='pv-page';
+    // Calibration line scales with printScale so users can verify the scaling
+    // is baked in correctly: at 50%, the "100mm" line measures 50mm on paper.
+    const calibLen = 100 * printScale;
+    const calibEnd = 10 + calibLen;
+    const calibText = scalePct===100
+      ? 'Print calibration — this line should measure exactly 100mm'
+      : `Print calibration at ${scalePct}% scale — this line should measure exactly ${calibLen.toFixed(0)}mm on paper`;
+    ruler.innerHTML = `<svg class="pv-svg" width="${paper.w}mm" height="${paper.h}mm" viewBox="0 0 ${paper.w} ${paper.h}">
+      <text x="10" y="14" font-size="4" font-family="monospace">${calibText}</text>
+      <line x1="10" y1="24" x2="${calibEnd}" y2="24" stroke="black" stroke-width="0.4"/>
+      <line x1="10" y1="20" x2="10" y2="28" stroke="black" stroke-width="0.4"/>
+      <line x1="${calibEnd}" y1="20" x2="${calibEnd}" y2="28" stroke="black" stroke-width="0.4"/>
+    </svg>`;
+    root.appendChild(ruler);
+  }
+
+  // Helper: build SVG path for a layer's loops placed at offset (dx, dy) on the page.
+  function layerPathAt(layer, dx, dy, minLayerX, maxLayerY){
+    return layer.loops.map(loop=>{
+      return loop.map((p,i)=>{
+        const px = (p.x - minLayerX) + margin + dx;
+        const py = margin + dy + (maxLayerY - p.y);
+        return (i===0?'M':'L') + px.toFixed(2) + ' ' + py.toFixed(2);
+      }).join(' ') + ' Z';
+    }).join(' ');
+  }
+
+  // Helper: alignment hole SVG for a placement
+  function holeSVGAt(px, py){
+    return `<circle cx="${px.toFixed(2)}" cy="${py.toFixed(2)}" r="${(holeDia/2).toFixed(2)}" fill="none" stroke="black" stroke-width="0.3" stroke-dasharray="1,1"/>
+            <line x1="${(px-3).toFixed(2)}" y1="${py.toFixed(2)}" x2="${(px+3).toFixed(2)}" y2="${py.toFixed(2)}" stroke="black" stroke-width="0.2"/>
+            <line x1="${px.toFixed(2)}" y1="${(py-3).toFixed(2)}" x2="${px.toFixed(2)}" y2="${(py+3).toFixed(2)}" stroke="black" stroke-width="0.2"/>`;
+  }
+
+  // Helper: big bold layer number placed at the centroid of a shape's bounding
+  // box, large enough to read through spray-mount paper and trace onto the MDF
+  // with a marker before the paper is removed.
+  function bigNumberSVG(num, cx, cy, sizeMm){
+    const fontSize = Math.min(sizeMm * 0.6, 14);
+    return `<text x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" font-family="sans-serif" font-size="${fontSize.toFixed(1)}" font-weight="bold" fill="#000" text-anchor="middle" dominant-baseline="central" opacity="0.55">${num}</text>`;
+  }
+
+  // ---------- fold-lines unfold (panel mode only) ----------
+  // When enabled, lays out all panels in a cross/strip pattern connected by
+  // dashed fold lines, so a box can be cut as one piece and folded up.
+  // Simple approach: sort panels by area (largest first), place the largest
+  // in the center, then attach each subsequent panel to the right edge of
+  // the previous one with a fold line between them. Not a true 3D unfold,
+  // but produces a practical strip for most boxy shapes.
+  const foldLines = resolvedDecompMode === 'panel' && document.getElementById('foldLines') && document.getElementById('foldLines').checked;
+  if(foldLines && scaledLayers.length > 1){
+    // Compute each panel's bounds
+    const panelInfos = scaledLayers.map((layer, idx) => {
+      const bb = layerBounds(layer);
+      return { idx, layer, bb };
+    });
+    // Sort by area descending (largest first = center panel)
+    panelInfos.sort((a, b) => (b.bb.w * b.bb.h) - (a.bb.w * a.bb.h));
+
+    // Place panels in a horizontal strip, largest in center
+    // Total width = sum of all panel widths + gaps
+    const gap = 2; // small gap for the fold line
+    let totalW = 0, maxH = 0;
+    panelInfos.forEach(pi => { totalW += pi.bb.w + gap; maxH = Math.max(maxH, pi.bb.h); });
+    totalW -= gap; // no trailing gap
+
+    // Check if it fits on one page; if not, we still generate it (will be clipped)
+    const pageEl = document.createElement('div');
+    pageEl.className = 'pv-page';
+    const svgW = paper.w, svgH = paper.h;
+    let body = `<rect x="${margin}" y="${margin}" width="${contentW}" height="${contentH}" fill="none" stroke="#ddd" stroke-width="0.2"/>`;
+
+    // Center the strip vertically
+    const stripY = margin + (contentH - maxH) / 2;
+    // Center horizontally if it fits
+    let cursorX = margin + Math.max(0, (contentW - totalW) / 2);
+
+    panelInfos.forEach((pi, i) => {
+      const layer = pi.layer;
+      const pathD = layer.loops.map(loop => {
+        return loop.map((p, j) => {
+          const px = (p.x - pi.bb.minX) + cursorX;
+          const py = stripY + (pi.bb.maxY - p.y);
+          return (j === 0 ? 'M' : 'L') + px.toFixed(2) + ' ' + py.toFixed(2);
+        }).join(' ') + ' Z';
+      }).join(' ');
+
+      body += `<path d="${pathD}" fill="none" stroke="black" stroke-width="0.35" fill-rule="evenodd"/>`;
+
+      // Big panel number
+      body += bigNumberSVG(pi.idx + 1, cursorX + pi.bb.w / 2, stripY + pi.bb.h / 2, Math.min(pi.bb.w, pi.bb.h));
+
+      // Fold line to next panel (dashed)
+      if(i < panelInfos.length - 1){
+        const foldX = cursorX + pi.bb.w + gap / 2;
+        body += `<line x1="${foldX.toFixed(1)}" y1="${stripY.toFixed(1)}" x2="${foldX.toFixed(1)}" y2="${(stripY + maxH).toFixed(1)}" stroke="black" stroke-width="0.3" stroke-dasharray="2,1.5"/>`;
+        body += `<text x="${(foldX + 1).toFixed(1)}" y="${(stripY + 3).toFixed(1)}" font-family="monospace" font-size="2.5" fill="#666">fold</text>`;
+      }
+
+      cursorX += pi.bb.w + gap;
+    });
+
+    pageEl.innerHTML = `
+      <svg class="pv-svg" width="${svgW}mm" height="${svgH}mm" viewBox="0 0 ${svgW} ${svgH}">${body}</svg>
+      <div class="pv-label" style="left:${margin}mm; top:${(margin + contentH + 3)}mm;">Unfold layout — ${panelInfos.length} panels connected by fold lines (dashed). Cut the solid outline, score and fold along the dashed lines, then glue the seam to close.</div>
+    `;
+    root.appendChild(pageEl);
+    window.print();
+    return; // skip normal page generation
+  }
+
+  pages.forEach((page, pageIdx)=>{
+    const pageEl = document.createElement('div');
+    pageEl.className='pv-page';
+    const svgW = paper.w, svgH = paper.h;
+
+    // Registration marks at content corners
+    let regSVG = '';
+    const regPts = [[margin,margin],[svgW-margin,margin],[margin,margin+contentH],[svgW-margin,margin+contentH]];
+    regPts.forEach(([x,y])=>{
+      regSVG += `<line x1="${x-2.5}" y1="${y}" x2="${x+2.5}" y2="${y}" stroke="#999" stroke-width="0.2"/><line x1="${x}" y1="${y-2.5}" x2="${x}" y2="${y+2.5}" stroke="#999" stroke-width="0.2"/>`;
+    });
+
+    let body = `<rect x="${margin}" y="${margin}" width="${contentW}" height="${contentH}" fill="none" stroke="#ddd" stroke-width="0.2"/>${regSVG}`;
+    let labelText;
+
+    if(page.tiled){
+      // Oversized tiled page
+      const t = page.tiled;
+      const layer = scaledLayers[t.layerIdx];
+      const pathD = layer.loops.map(loop=>{
+        return loop.map((p,i)=>{
+          const px = (p.x - t.tileOriginX) + margin;
+          const py = margin + contentH - (p.y - t.tileOriginY);
+          return (i===0?'M':'L') + px.toFixed(2) + ' ' + py.toFixed(2);
+        }).join(' ') + ' Z';
+      }).join(' ');
+
+      let holeSVG = '';
+      if(alignOn){
+        const holes = getHolePoints(layer);
+        holes.forEach(hp => {
+          const px = (hp.x - t.tileOriginX) + margin;
+          const py = margin + contentH - (hp.y - t.tileOriginY);
+          if(px>=0 && px<=svgW && py>=0 && py<=svgH) holeSVG += holeSVGAt(px, py);
+        });
+      }
+      body += `<path d="${pathD}" fill="none" stroke="black" stroke-width="0.35" fill-rule="evenodd"/>${holeSVG}`;
+      // Big layer number at center of content area
+      body += bigNumberSVG(t.layerIdx+1, svgW/2, margin + contentH/2, Math.min(contentW, contentH));
+      labelText = `${pieceWordCap} ${t.layerIdx+1} / ${layers.length} — page ${t.pageNum}/${t.totalPages} — row ${t.row+1} col ${t.col+1} — cut solid line, overlap edges to align adjacent tiles`;
+    } else {
+      // Packed page — draw each placement
+      page.placements.forEach(pl=>{
+        const layer = scaledLayers[pl.layerIdx];
+        const pathD = layerPathAt(layer, pl.dx, pl.dy, pl.minLayerX, pl.maxLayerY);
+
+        // Faint dashed bounding box around each packed shape
+        body += `<rect x="${(margin+pl.dx).toFixed(1)}" y="${(margin+pl.dy).toFixed(1)}" width="${pl.w.toFixed(1)}" height="${pl.h.toFixed(1)}" fill="none" stroke="#ccc" stroke-width="0.15" stroke-dasharray="1,1"/>`;
+
+        let holeSVG = '';
+        if(alignOn){
+          const holes = getHolePoints(layer);
+          holes.forEach(hp => {
+            const px = (hp.x - pl.minLayerX) + margin + pl.dx;
+            const py = margin + pl.dy + (pl.maxLayerY - hp.y);
+            if(px>=margin+pl.dx && px<=margin+pl.dx+pl.w && py>=margin+pl.dy && py<=margin+pl.dy+pl.h)
+              holeSVG += holeSVGAt(px, py);
+          });
+        }
+        body += `<path d="${pathD}" fill="none" stroke="black" stroke-width="0.35" fill-rule="evenodd"/>${holeSVG}`;
+
+        // Big bold layer number at centroid of this shape
+        const cx = margin + pl.dx + pl.w/2;
+        const cy = margin + pl.dy + pl.h/2;
+        body += bigNumberSVG(pl.layerIdx+1, cx, cy, Math.min(pl.w, pl.h));
+
+        // Per-shape label (below the shape, in mm-scale SVG text)
+        const lx = margin + pl.dx;
+        const ly = margin + pl.dy + pl.h + 2.5;
+        body += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-family="monospace" font-size="3" fill="#000">${pieceWordCap} ${pl.layerIdx+1}/${layers.length}</text>`;
+      });
+      labelText = `Page ${pageIdx+1} / ${pages.length} — ${page.placements.length} ${pieceWord}${page.placements.length===1?'':'s'} — cut solid lines`;
+    }
+
+    pageEl.innerHTML = `
+      <svg class="pv-svg" width="${svgW}mm" height="${svgH}mm" viewBox="0 0 ${svgW} ${svgH}">${body}</svg>
+      <div class="pv-label" style="left:${margin}mm; top:${(margin+contentH+3)}mm;">${labelText}</div>
+    `;
+    root.appendChild(pageEl);
+  });
+
+  window.print();
+}
+
+// ---------- assembly preview ----------
+// Shows a 3D rendering of the final glued-up stack: each layer is extruded by
+// the MDF thickness and stacked at its correct Z height, so the user can see
+// what the finished project will look like before cutting anything.
+let assemblyRenderer = null, assemblyScene = null, assemblyCamera = null;
+let assemblyControls = null, assemblyAnimId = null, assemblyGroup = null;
+
+document.getElementById('assemblyBtn').addEventListener('click', openAssemblyPreview);
+document.getElementById('assemblyClose').addEventListener('click', closeAssemblyPreview);
+
+// Classify a layer's loops into outer contours + their holes. A loop is a hole
+// if it is geometrically inside another (larger) loop; disjoint loops become
+// separate outer contours. This correctly handles both annular slices (ring
+// with a hole) and multi-region slices (torus top/bottom = two separate loops).
+function classifyLoops(loops){
+  const withArea = loops.map(l => ({ loop: l, area: polygonAreaAbs(l) }));
+  withArea.sort((a,b) => b.area - a.area);
+  const used = new Array(withArea.length).fill(false);
+  const groups = [];
+  for(let i=0; i<withArea.length; i++){
+    if(used[i]) continue;
+    used[i] = true;
+    const outer = withArea[i].loop;
+    const holes = [];
+    for(let j=i+1; j<withArea.length; j++){
+      if(used[j]) continue;
+      // Is loop j inside loop i? Test one point of j against [outer].
+      if(pointInLoops(withArea[j].loop[0], [outer])){
+        used[j] = true;
+        holes.push(withArea[j].loop);
+      }
+    }
+    groups.push({ outer, holes });
+  }
+  return groups;
+}
+
+function buildExtrudedMesh(groups, thickness, offsetX, offsetY, zBase, material){
+  const subGroup = new THREE.Group();
+  groups.forEach(g => {
+    const shape = new THREE.Shape();
+    shape.moveTo(g.outer[0].x - offsetX, g.outer[0].y - offsetY);
+    for(let i=1; i<g.outer.length; i++) shape.lineTo(g.outer[i].x - offsetX, g.outer[i].y - offsetY);
+    shape.closePath();
+    g.holes.forEach(hole => {
+      const path = new THREE.Path();
+      path.moveTo(hole[0].x - offsetX, hole[0].y - offsetY);
+      for(let i=1; i<hole.length; i++) path.lineTo(hole[i].x - offsetX, hole[i].y - offsetY);
+      path.closePath();
+      shape.holes.push(path);
+    });
+    try {
+      const geo = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false });
+      const mesh = new THREE.Mesh(geo, material);
+      mesh.position.set(0, 0, zBase);
+      subGroup.add(mesh);
+    } catch(e){ /* skip degenerate shapes */ }
+  });
+  return subGroup;
+}
+
+function openAssemblyPreview(){
+  if(!layers.length || !modelBoundsMM){ alert('Compute slices first.'); return; }
+  const modal = document.getElementById('assemblyModal');
+  const container = document.getElementById('assemblyViewer');
+  const title = document.getElementById('assemblyTitle');
+  const hint = document.getElementById('assemblyHint');
+  const thickness = parseFloat(document.getElementById('thickness').value) || 6;
+  const scaledLayers = getScaledLayers();
+  const mb = getScaledModelBounds();
+  const scalePct = Math.round(getPrintScale()*100);
+
+  cleanupAssembly();
+
+  assemblyScene = new THREE.Scene();
+  assemblyCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100000);
+  assemblyRenderer = new THREE.WebGLRenderer({ antialias: true });
+  assemblyRenderer.setPixelRatio(window.devicePixelRatio);
+  container.appendChild(assemblyRenderer.domElement);
+
+  assemblyScene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 1.0));
+  const dl = new THREE.DirectionalLight(0xffffff, 0.7);
+  dl.position.set(1, -1, 2);
+  assemblyScene.add(dl);
+  const dl2 = new THREE.DirectionalLight(0xffffff, 0.3);
+  dl2.position.set(-1, 1, 1);
+  assemblyScene.add(dl2);
+
+  assemblyControls = new OrbitControls(assemblyCamera, assemblyRenderer.domElement);
+  assemblyControls.enableDamping = true;
+
+  const material = new THREE.MeshStandardMaterial({ color: 0xb8895a, metalness: 0.0, roughness: 0.85, side: THREE.DoubleSide });
+  assemblyGroup = new THREE.Group();
+
+  if(resolvedDecompMode === 'panel'){
+    // Flat-panel mode: lay panels out flat in a grid so the user can see all pieces.
+    // If there are too many panels (curved model), show a warning instead of
+    // trying to render thousands of tiny fragments — that just looks broken.
+    if(layers.length > 100){
+      title.textContent = 'Panel layout preview (' + layers.length + ' panels — too many to preview)';
+      hint.textContent = 'This model has too many panels to preview. Use Stacked Layers mode for curved shapes.';
+      // Show a text message in the viewer instead of rendering
+      const msg = document.createElement('div');
+      msg.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--ink);font-family:var(--sans);font-size:15px;padding:40px;pointer-events:none;z-index:2;line-height:1.6;';
+      msg.innerHTML = '<div><div style="font-size:42px;margin-bottom:16px;opacity:.5;">&#9888;</div>' +
+        '<b>' + layers.length + ' panels</b> is too many to preview.<br>' +
+        'This model appears curved — Flat Panels mode fragments it into tiny pieces.<br><br>' +
+        'Switch to <b>Stacked Layers</b> mode for a usable preview and practical cut sheets.</div>';
+      container.appendChild(msg);
+      modal.classList.add('show');
+      requestAnimationFrame(()=>{ /* no renderer to resize */ });
+      return;
+    }
+    title.textContent = 'Panel layout preview (' + layers.length + ' panels, ' + thickness + 'mm MDF' + (scalePct!==100 ? ', ' + scalePct + '%' : '') + ')';
+    hint.textContent = 'drag to orbit · scroll to zoom' + (scalePct!==100 ? ' — shown at ' + scalePct + '% print scale' : '');
+    let cursorX = 0, cursorY = 0, rowH = 0;
+    const gap = 10;
+    scaledLayers.forEach(layer => {
+      const bb = layerBounds(layer);
+      if(cursorX + bb.w + gap > 500){ cursorY += rowH + gap; cursorX = 0; rowH = 0; }
+      const groups = classifyLoops(layer.loops);
+      const mesh = buildExtrudedMesh(groups, thickness, bb.minX - cursorX, bb.minY - cursorY, 0, material);
+      assemblyGroup.add(mesh);
+      cursorX += bb.w + gap;
+      rowH = Math.max(rowH, bb.h);
+    });
+  } else {
+    // Stacked-layer mode: extrude each layer and stack at z = idx * thickness
+    title.textContent = 'Assembled preview (' + layers.length + ' layers × ' + thickness + 'mm = ' + (layers.length * thickness) + 'mm' + (scalePct!==100 ? ' · ' + scalePct + '%' : '') + ')';
+    hint.textContent = 'drag to orbit · scroll to zoom' + (scalePct!==100 ? ' — shown at ' + scalePct + '% print scale' : '');
+    const cx = (mb.minX + mb.maxX) / 2;
+    const cy = (mb.minY + mb.maxY) / 2;
+    scaledLayers.forEach((layer, idx) => {
+      const groups = classifyLoops(layer.loops);
+      const mesh = buildExtrudedMesh(groups, thickness, cx, cy, idx * thickness, material);
+      assemblyGroup.add(mesh);
+    });
+  }
+
+  assemblyScene.add(assemblyGroup);
+
+  // Frame camera on the assembled model
+  const bbox = new THREE.Box3().setFromObject(assemblyGroup);
+  if(!isFinite(bbox.min.x)){ bbox.set(new THREE.Vector3(-1,-1,-1), new THREE.Vector3(1,1,1)); }
+  const size = new THREE.Vector3(); bbox.getSize(size);
+  const center = new THREE.Vector3(); bbox.getCenter(center);
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const dist = maxDim * 2.0 + 0.001;
+  assemblyCamera.position.set(center.x + dist*0.6, center.y - dist*0.9, center.z + dist*0.6);
+  assemblyCamera.up.set(0, 0, 1);
+  assemblyCamera.lookAt(center);
+  assemblyControls.target.copy(center);
+  assemblyControls.update();
+
+  function animateAsm(){
+    assemblyAnimId = requestAnimationFrame(animateAsm);
+    if(assemblyControls) assemblyControls.update();
+    if(assemblyRenderer && assemblyScene && assemblyCamera)
+      assemblyRenderer.render(assemblyScene, assemblyCamera);
+  }
+  animateAsm();
+
+  modal.classList.add('show');
+  // Defer resize until the modal is visible so clientWidth/Height are nonzero
+  requestAnimationFrame(resizeAssembly);
+}
+
+function resizeAssembly(){
+  if(!assemblyRenderer) return;
+  const container = document.getElementById('assemblyViewer');
+  const w = container.clientWidth, h = container.clientHeight;
+  if(w===0 || h===0) return;
+  assemblyRenderer.setSize(w, h);
+  assemblyCamera.aspect = w / h;
+  assemblyCamera.updateProjectionMatrix();
+}
+
+function cleanupAssembly(){
+  if(assemblyAnimId){ cancelAnimationFrame(assemblyAnimId); assemblyAnimId = null; }
+  if(assemblyControls){ assemblyControls.dispose(); assemblyControls = null; }
+  if(assemblyGroup){
+    assemblyGroup.traverse(o => {
+      if(o.geometry) o.geometry.dispose();
+    });
+    assemblyGroup = null;
+  }
+  if(assemblyRenderer){
+    assemblyRenderer.dispose();
+    if(assemblyRenderer.domElement && assemblyRenderer.domElement.parentNode)
+      assemblyRenderer.domElement.parentNode.removeChild(assemblyRenderer.domElement);
+    assemblyRenderer = null;
+  }
+  // Remove any warning message divs added for the too-many-panels case
+  const container = document.getElementById('assemblyViewer');
+  if(container){
+    container.querySelectorAll('div').forEach(d => d.remove());
+  }
+  assemblyScene = null;
+  assemblyCamera = null;
+}
+
+function closeAssemblyPreview(){
+  document.getElementById('assemblyModal').classList.remove('show');
+  cleanupAssembly();
+}
+
+window.addEventListener('resize', ()=>{
+  if(document.getElementById('assemblyModal').classList.contains('show')) resizeAssembly();
+});
+
+// ---------- SVG export ----------
+// Exports each layer (or panel) as an individual SVG file, all bundled into a
+// single SVG with one <g> per layer. For laser cutters / CNC that read SVG.
+document.getElementById('exportSvgBtn').addEventListener('click', exportSVG);
+
+function exportSVG(){
+  if(!layers.length || !modelBoundsMM){ alert('Compute slices first.'); return; }
+  const { from, to } = getPrintRange();
+  const holeDia = parseFloat(document.getElementById('holeDia').value)||8;
+  const holeMode = document.getElementById('holeMode').value || 'center';
+  const alignOn = resolvedDecompMode==='contour' && document.getElementById('alignHoles').checked;
+  const scaledLayers = getScaledLayers();
+  const mb = getScaledModelBounds();
+  const centerX = (mb.minX+mb.maxX)/2;
+  const centerY = (mb.minY+mb.maxY)/2;
+  const cornerInset = Math.max(holeDia * 1.5, 12);
+  const cornerHoles = [
+    { x: mb.minX + cornerInset, y: mb.minY + cornerInset },
+    { x: mb.maxX - cornerInset, y: mb.minY + cornerInset },
+    { x: mb.minX + cornerInset, y: mb.maxY - cornerInset },
+    { x: mb.maxX - cornerInset, y: mb.maxY - cornerInset },
+  ];
+  const margin = 5;
+  const w = mb.maxX - mb.minX + margin*2;
+  const h = mb.maxY - mb.minY + margin*2;
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w.toFixed(1)}mm" height="${h.toFixed(1)}mm" viewBox="0 0 ${w.toFixed(1)} ${h.toFixed(1)}">\n`;
+  svg += `<rect width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="none"/>\n`;
+
+  for(let li=from-1; li<=to-1; li++){
+    if(hiddenLayers.has(li)) continue;
+    const layer = scaledLayers[li];
+    const ox = -mb.minX + margin;
+    const oy = -mb.minY + margin;
+    // Layer outline paths (SVG Y is down, so flip)
+    const paths = layer.loops.map(loop => {
+      const d = loop.map((p,i) => (i===0?'M':'L') + (p.x+ox).toFixed(2) + ' ' + (h-(p.y+oy)).toFixed(2)).join(' ') + ' Z';
+      return `<path d="${d}" fill="none" stroke="black" stroke-width="0.3" fill-rule="evenodd"/>`;
+    }).join('\n  ');
+    // Alignment holes
+    let holes = '';
+    if(alignOn){
+      let pts;
+      if(holeMode === 'corners') pts = cornerHoles.filter(p => pointInLoops(p, layer.loops));
+      else pts = pointInLoops({x:centerX,y:centerY}, layer.loops) ? [{x:centerX,y:centerY}] : [];
+      pts.forEach(hp => {
+        const cx = hp.x + ox, cy = h - (hp.y + oy);
+        holes += `<circle cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="${(holeDia/2).toFixed(2)}" fill="none" stroke="black" stroke-width="0.2" stroke-dasharray="1,1"/>`;
+      });
+    }
+    svg += `  <g id="layer-${li+1}" data-layer="${li+1}">\n    ${paths}\n    ${holes}\n  </g>\n`;
+  }
+  svg += `</svg>`;
+
+  const blob = new Blob([svg], { type:'image/svg+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const scalePct = Math.round(getPrintScale()*100);
+  a.download = `contour-slicer-layers-${scalePct}pct.svg`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+
+// ---------- per-layer SVG ZIP export ----------
+// Generates one SVG file per layer and bundles them into a ZIP using a minimal
+// store-only ZIP writer (no compression needed for small SVGs). This avoids
+// requiring a third-party JSZip library.
+document.getElementById('exportSvgZipBtn').addEventListener('click', exportSvgZip);
+
+function exportSvgZip(){
+  if(!layers.length || !modelBoundsMM){ alert('Compute slices first.'); return; }
+  const { from, to } = getPrintRange();
+  const holeDia = parseFloat(document.getElementById('holeDia').value)||8;
+  const holeMode = document.getElementById('holeMode').value || 'center';
+  const alignOn = resolvedDecompMode==='contour' && document.getElementById('alignHoles').checked;
+  const scaledLayers = getScaledLayers();
+  const mb = getScaledModelBounds();
+  const centerX = (mb.minX+mb.maxX)/2;
+  const centerY = (mb.minY+mb.maxY)/2;
+  const cornerInset = Math.max(holeDia * 1.5, 12);
+  const cornerHoles = [
+    { x: mb.minX + cornerInset, y: mb.minY + cornerInset },
+    { x: mb.maxX - cornerInset, y: mb.minY + cornerInset },
+    { x: mb.minX + cornerInset, y: mb.maxY - cornerInset },
+    { x: mb.maxX - cornerInset, y: mb.maxY - cornerInset },
+  ];
+  const margin = 5;
+
+  // Generate per-layer SVGs
+  const svgFiles = [];
+  for(let li=from-1; li<=to-1; li++){
+    if(hiddenLayers.has(li)) continue;
+    const layer = scaledLayers[li];
+    // Per-layer bounds (each SVG is self-contained)
+    let lMinX=Infinity,lMaxX=-Infinity,lMinY=Infinity,lMaxY=-Infinity;
+    layer.loops.forEach(loop=>loop.forEach(p=>{
+      if(p.x<lMinX)lMinX=p.x; if(p.x>lMaxX)lMaxX=p.x;
+      if(p.y<lMinY)lMinY=p.y; if(p.y>lMaxY)lMaxY=p.y;
+    }));
+    const w = lMaxX - lMinX + margin*2;
+    const h = lMaxY - lMinY + margin*2;
+    const ox = -lMinX + margin;
+    const oy = -lMinY + margin;
+    const paths = layer.loops.map(loop => {
+      const d = loop.map((p,i) => (i===0?'M':'L') + (p.x+ox).toFixed(2) + ' ' + (h-(p.y+oy)).toFixed(2)).join(' ') + ' Z';
+      return `<path d="${d}" fill="none" stroke="black" stroke-width="0.3" fill-rule="evenodd"/>`;
+    }).join('\n  ');
+    let holes = '';
+    if(alignOn){
+      let pts;
+      if(holeMode === 'corners') pts = cornerHoles.filter(p => pointInLoops(p, layer.loops));
+      else pts = pointInLoops({x:centerX,y:centerY}, layer.loops) ? [{x:centerX,y:centerY}] : [];
+      pts.forEach(hp => {
+        const cx = hp.x + ox, cy = h - (hp.y + oy);
+        holes += `<circle cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="${(holeDia/2).toFixed(2)}" fill="none" stroke="black" stroke-width="0.2" stroke-dasharray="1,1"/>`;
+      });
+    }
+    // Big layer number
+    const numSize = Math.min(w, h) * 0.6;
+    const numSVG = `<text x="${(w/2).toFixed(1)}" y="${(h/2).toFixed(1)}" font-family="sans-serif" font-size="${numSize.toFixed(1)}" font-weight="bold" fill="#000" text-anchor="middle" dominant-baseline="central" opacity="0.4">${li+1}</text>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w.toFixed(1)}mm" height="${h.toFixed(1)}mm" viewBox="0 0 ${w.toFixed(1)} ${h.toFixed(1)}">\n  ${paths}\n  ${numSVG}\n  ${holes}\n</svg>`;
+    svgFiles.push({ name: `layer-${String(li+1).padStart(3,'0')}.svg`, content: svg });
+  }
+
+  // Build a minimal ZIP (store method, no compression)
+  const zipBlob = buildZip(svgFiles);
+  const url = URL.createObjectURL(zipBlob);
+  const a = document.createElement('a');
+  const scalePct = Math.round(getPrintScale()*100);
+  a.href = url;
+  a.download = `contour-slicer-layers-${scalePct}pct.zip`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+
+// Minimal ZIP file builder (store method only, no compression).
+// Each file gets a local header + data; followed by a central directory.
+function buildZip(files){
+  const enc = new TextEncoder();
+  const chunks = [];
+  const centralDir = [];
+  let offset = 0;
+
+  files.forEach(f => {
+    const nameBytes = enc.encode(f.name);
+    const dataBytes = enc.encode(f.content);
+    // CRC32
+    const crc = crc32(dataBytes);
+
+    // Local file header (30 bytes + name)
+    const localHeader = new Uint8Array(30 + nameBytes.length);
+    const dv = new DataView(localHeader.buffer);
+    dv.setUint32(0, 0x04034b50, true);  // signature
+    dv.setUint16(4, 20, true);          // version needed
+    dv.setUint16(6, 0, true);           // flags
+    dv.setUint16(8, 0, true);           // compression (store)
+    dv.setUint16(10, 0, true);          // mod time
+    dv.setUint16(12, 0, true);          // mod date
+    dv.setUint32(14, crc, true);        // crc32
+    dv.setUint32(18, dataBytes.length, true);  // compressed size
+    dv.setUint32(22, dataBytes.length, true);  // uncompressed size
+    dv.setUint16(26, nameBytes.length, true);  // name length
+    dv.setUint16(28, 0, true);          // extra field length
+    localHeader.set(nameBytes, 30);
+
+    chunks.push(localHeader);
+    chunks.push(dataBytes);
+
+    // Central directory record
+    const cdRecord = new Uint8Array(46 + nameBytes.length);
+    const cdv = new DataView(cdRecord.buffer);
+    cdv.setUint32(0, 0x02014b50, true); // signature
+    cdv.setUint16(4, 20, true);         // version made by
+    cdv.setUint16(6, 20, true);         // version needed
+    cdv.setUint16(8, 0, true);          // flags
+    cdv.setUint16(10, 0, true);         // compression
+    cdv.setUint16(12, 0, true);         // mod time
+    cdv.setUint16(14, 0, true);         // mod date
+    cdv.setUint32(16, crc, true);       // crc32
+    cdv.setUint32(20, dataBytes.length, true);  // compressed size
+    cdv.setUint32(24, dataBytes.length, true);  // uncompressed size
+    cdv.setUint16(28, nameBytes.length, true);  // name length
+    cdv.setUint16(30, 0, true);         // extra length
+    cdv.setUint16(32, 0, true);         // comment length
+    cdv.setUint16(34, 0, true);         // disk number
+    cdv.setUint16(36, 0, true);         // internal attrs
+    cdv.setUint32(38, 0, true);         // external attrs
+    cdv.setUint32(42, offset, true);    // local header offset
+    cdRecord.set(nameBytes, 46);
+    centralDir.push(cdRecord);
+
+    offset += localHeader.length + dataBytes.length;
+  });
+
+  // End of central directory
+  const cdSize = centralDir.reduce((s, a) => s + a.length, 0);
+  const eocd = new Uint8Array(22);
+  const edv = new DataView(eocd.buffer);
+  edv.setUint32(0, 0x06054b50, true);   // signature
+  edv.setUint16(4, 0, true);            // disk number
+  edv.setUint16(6, 0, true);            // disk with CD
+  edv.setUint16(8, files.length, true); // entries on this disk
+  edv.setUint16(10, files.length, true); // total entries
+  edv.setUint32(12, cdSize, true);      // CD size
+  edv.setUint32(16, offset, true);      // CD offset
+  edv.setUint16(20, 0, true);           // comment length
+
+  return new Blob([...chunks, ...centralDir, eocd], { type: 'application/zip' });
+}
+
+// CRC32 lookup-table implementation
+function crc32(data){
+  let table = crc32.table;
+  if(!table){
+    table = new Uint32Array(256);
+    for(let i=0; i<256; i++){
+      let c = i;
+      for(let j=0; j<8; j++){
+        c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      }
+      table[i] = c >>> 0;
+    }
+    crc32.table = table;
+  }
+  let crc = 0xFFFFFFFF;
+  for(let i=0; i<data.length; i++){
+    crc = (table[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8)) >>> 0;
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+// ---------- project save / load ----------
+// Saves the current STL (as base64) + all settings to a .cspj file (JSON).
+// Load reverses it. Lets you close the tab and resume exactly where you left off.
+document.getElementById('saveProjectBtn').addEventListener('click', saveProject);
+document.getElementById('loadProjectBtn').addEventListener('click', ()=>document.getElementById('projectFileInput').click());
+document.getElementById('projectFileInput').addEventListener('change', loadProject);
+
+function saveProject(){
+  if(!geometry){
+    alert('Load a model first, then save the project.');
+    return;
+  }
+  // Serialize geometry to binary STL (simplest format)
+  const pos = geometry.attributes.position;
+  const triCount = pos.count / 3;
+  const stlBuf = new ArrayBuffer(84 + triCount * 50);
+  const dv = new DataView(stlBuf);
+  // 80-byte header (empty)
+  dv.setUint32(80, triCount, true);
+  for(let i=0; i<triCount; i++){
+    const off = 84 + i * 50;
+    // Normal (12 bytes) — leave as 0, most importers recalculate
+    dv.setFloat32(off+12, pos.getX(i*3), true);
+    dv.setFloat32(off+16, pos.getY(i*3), true);
+    dv.setFloat32(off+20, pos.getZ(i*3), true);
+    dv.setFloat32(off+24, pos.getX(i*3+1), true);
+    dv.setFloat32(off+28, pos.getY(i*3+1), true);
+    dv.setFloat32(off+32, pos.getZ(i*3+1), true);
+    dv.setFloat32(off+36, pos.getX(i*3+2), true);
+    dv.setFloat32(off+40, pos.getY(i*3+2), true);
+    dv.setFloat32(off+44, pos.getZ(i*3+2), true);
+    dv.setUint16(off+48, 0, true);
+  }
+  // Base64-encode the STL (chunked to avoid call stack limits on large models)
+  const stlBytes = new Uint8Array(stlBuf);
+  let binaryStr = '';
+  const chunk = 8192;
+  for(let i=0; i<stlBytes.length; i+=chunk){
+    binaryStr += String.fromCharCode.apply(null, stlBytes.subarray(i, Math.min(i+chunk, stlBytes.length)));
+  }
+  const stlB64 = btoa(binaryStr);
+
+  const project = {
+    version: 1,
+    stlBase64: stlB64,
+    filename: document.getElementById('filename').textContent || 'model.stl',
+    settings: {
+      decompMode: document.querySelector('input[name=decompmode]:checked').value,
+      scaleMode: document.querySelector('input[name=scalemode]:checked').value,
+      targetHeight: document.getElementById('targetHeight').value,
+      thickness: document.getElementById('thickness').value,
+      kerf: document.getElementById('kerf').value,
+      sheetSize: document.getElementById('sheetSize').value,
+      sheetW: document.getElementById('sheetW').value,
+      sheetH: document.getElementById('sheetH').value,
+      mirrorHalf: document.getElementById('mirrorHalf').checked,
+      foldLines: document.getElementById('foldLines').checked,
+      paperSize: document.getElementById('paperSize').value,
+      overlap: document.getElementById('overlap').value,
+      shapeSpacing: document.getElementById('shapeSpacing').value,
+      printScale: document.getElementById('printScale').value,
+      alignHoles: document.getElementById('alignHoles').checked,
+      holeMode: document.getElementById('holeMode').value,
+      holeDia: document.getElementById('holeDia').value,
+    }
+  };
+  const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (project.filename.replace(/\.[^.]+$/, '') || 'project') + '.cspj';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+
+function loadProject(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  e.target.value = ''; // reset for next time
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const project = JSON.parse(ev.target.result);
+      // Restore settings
+      const s = project.settings;
+      if(s){
+        const modeRadio = document.querySelector('input[name=decompmode][value="' + s.decompMode + '"]');
+        if(modeRadio) modeRadio.checked = true;
+        const scaleRadio = document.querySelector('input[name=scalemode][value="' + s.scaleMode + '"]');
+        if(scaleRadio) scaleRadio.checked = true;
+        document.getElementById('targetHeight').value = s.targetHeight || 200;
+        document.getElementById('targetHeight').disabled = s.scaleMode !== 'fit';
+        document.getElementById('thickness').value = s.thickness || 6;
+        document.getElementById('kerf').value = s.kerf || 0;
+        document.getElementById('sheetSize').value = s.sheetSize || '2440x1220';
+        document.getElementById('sheetW').value = s.sheetW || 2440;
+        document.getElementById('sheetH').value = s.sheetH || 1220;
+        document.getElementById('customSheetField').style.display = (s.sheetSize === 'custom') ? 'block' : 'none';
+        document.getElementById('mirrorHalf').checked = !!s.mirrorHalf;
+        document.getElementById('foldLines').checked = !!s.foldLines;
+        document.getElementById('paperSize').value = s.paperSize || 'a4';
+        document.getElementById('overlap').value = s.overlap || 15;
+        document.getElementById('shapeSpacing').value = s.shapeSpacing || 8;
+        document.getElementById('printScale').value = s.printScale || 100;
+        document.getElementById('alignHoles').checked = !!s.alignHoles;
+        document.getElementById('holeMode').value = s.holeMode || 'center';
+        document.getElementById('holeDia').value = s.holeDia || 8;
+        // Trigger mode-change handler to update UI
+        const checkedMode = document.querySelector('input[name=decompmode]:checked');
+        if(checkedMode) checkedMode.dispatchEvent(new Event('change', {bubbles:true}));
+        // Update scale-dependent UI
+        onPrintScaleChange();
+      }
+      // Load the STL
+      const stlBinary = atob(project.stlBase64);
+      const stlBytes = new Uint8Array(stlBinary.length);
+      for(let i=0; i<stlBinary.length; i++) stlBytes[i] = stlBinary.charCodeAt(i);
+      const loader = new STLLoader();
+      const geo = loader.parse(stlBytes.buffer);
+      document.getElementById('filename').textContent = project.filename || 'loaded.stl';
+      useGeometry(geo);
+    } catch(err){
+      alert('Could not load project: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+// ---------- guided walkthrough ----------
+const WT_KEY = 'contourSlicer.walkthroughDone';
+const wtSteps = [
+  {
+    title: 'Welcome to Contour Slicer',
+    body: 'This tool turns any <b>STL 3D model</b> into printable cutting templates for stacked MDF sheets. This quick tour shows the workflow in about a minute.',
+    selector: null,
+  },
+  {
+    title: '1 — Load a model',
+    body: 'Drag in an <b>.stl file</b>, or click one of the example buttons to try the tool instantly with a ring or a box. No file needed for those.',
+    selector: '#dropzone',
+  },
+  {
+    title: '2 — Pick a decomposition mode',
+    body: '<b>Stacked layers</b> slices the model into horizontal cross-sections (best for organic shapes). <b>Flat panels</b> extracts each flat face (best for boxy shapes).',
+    selector: 'input[name=decompmode]',
+  },
+  {
+    title: '3 — Viewer controls',
+    body: 'Drag to orbit, scroll to zoom. The <b>Grid</b> and <b>Ruler</b> buttons show scale. <b>Wire</b> toggles wireframe. <b>Measure</b> lets you click two points for a distance. Keys: G R W M, 1/2/3 for views.',
+    selector: '.viewer-toggles',
+  },
+  {
+    title: '4 — Compute & preview',
+    body: 'Click <b>Compute slices</b>, then <b>Preview assembled result</b> to see a 3D mockup of the glued-up stack. Hover the layer thumbnails to see where each slice falls on the model.',
+    selector: '#sliceBtn',
+  },
+  {
+    title: '5 — Print or export',
+    body: 'Small shapes are packed multiple-per-page to save paper. <b>Open print templates</b> sends to your printer, or <b>Download SVG</b> for laser cutters / CNC.',
+    selector: '#printBtn',
+  },
+];
+
+let wtIdx = 0;
+const wtEl = document.getElementById('walkthrough');
+const wtCard = document.getElementById('wtCard');
+const wtSpot = document.getElementById('wtSpotlight');
+const wtTitle = document.getElementById('wtTitle');
+const wtBody = document.getElementById('wtBody');
+const wtStep = document.getElementById('wtStep');
+const wtDots = document.getElementById('wtDots');
+const wtNext = document.getElementById('wtNext');
+const wtSkip = document.getElementById('wtSkip');
+
+function renderWtDots(){
+  wtDots.innerHTML = '';
+  wtSteps.forEach((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'wt-dot' + (i===wtIdx ? ' on' : '');
+    wtDots.appendChild(d);
+  });
+}
+
+function positionWtCard(){
+  const step = wtSteps[wtIdx];
+  wtTitle.textContent = step.title;
+  wtBody.innerHTML = step.body;
+  wtStep.textContent = 'Step ' + (wtIdx+1) + ' of ' + wtSteps.length;
+  wtNext.textContent = (wtIdx === wtSteps.length-1) ? 'Done' : 'Next';
+  renderWtDots();
+
+  let targetRect = null;
+  if(step.selector){
+    const el = document.querySelector(step.selector);
+    if(el) targetRect = el.getBoundingClientRect();
+  }
+  if(targetRect){
+    const pad = 8;
+    wtSpot.style.display = 'block';
+    wtSpot.style.left = (targetRect.left - pad) + 'px';
+    wtSpot.style.top = (targetRect.top - pad) + 'px';
+    wtSpot.style.width = (targetRect.width + pad*2) + 'px';
+    wtSpot.style.height = (targetRect.height + pad*2) + 'px';
+    // Position card near target, preferring below-right
+    const cardW = 340, cardH = 180;
+    let cx = targetRect.right + 16;
+    let cy = targetRect.top;
+    if(cx + cardW > window.innerWidth - 12) cx = targetRect.left - cardW - 16;
+    if(cx < 12) cx = 12;
+    if(cy + cardH > window.innerHeight - 12) cy = window.innerHeight - cardH - 12;
+    if(cy < 12) cy = 12;
+    wtCard.style.left = cx + 'px';
+    wtCard.style.top = cy + 'px';
+  } else {
+    wtSpot.style.display = 'none';
+    // Center the card
+    const cardW = 340, cardH = 200;
+    wtCard.style.left = ((window.innerWidth - cardW)/2) + 'px';
+    wtCard.style.top = ((window.innerHeight - cardH)/2) + 'px';
+  }
+}
+
+function startWalkthrough(){
+  wtIdx = 0;
+  wtEl.classList.add('show');
+  positionWtCard();
+}
+
+function closeWalkthrough(){
+  wtEl.classList.remove('show');
+  try{ localStorage.setItem(WT_KEY, '1'); }catch(_){}
+}
+
+wtNext.addEventListener('click', ()=>{
+  if(wtIdx < wtSteps.length-1){ wtIdx++; positionWtCard(); }
+  else closeWalkthrough();
+});
+wtSkip.addEventListener('click', closeWalkthrough);
+document.getElementById('helpBtn').addEventListener('click', startWalkthrough);
+
+window.addEventListener('resize', ()=>{ if(wtEl.classList.contains('show')) positionWtCard(); });
+
+// Auto-start walkthrough on first visit
+try{
+  if(!localStorage.getItem(WT_KEY)){
+    setTimeout(startWalkthrough, 800);
+  }
+}catch(_){}
+
+window.__contourSlicerReady = true;
+</script>
+</body>
+</html>
