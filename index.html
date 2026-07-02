@@ -1621,8 +1621,11 @@ document.getElementById('sliceBtn').addEventListener('click', ()=>{
     : 'Layer preview (bottom \u2192 top)';
 
   const rf = document.getElementById('rangeFrom'), rt = document.getElementById('rangeTo');
-  rf.min = 1; rf.max = layers.length; rf.value = 1;
-  rt.min = 1; rt.max = layers.length; rt.value = layers.length;
+  // When mirrored, only the first half of layers are printed
+  const isMirrored = usePanel ? false : document.getElementById('mirrorHalf').checked;
+  const effCount = isMirrored ? Math.ceil(layers.length / 2) : layers.length;
+  rf.min = 1; rf.max = effCount; rf.value = 1;
+  rt.min = 1; rt.max = effCount; rt.value = effCount;
   document.getElementById('rangeFromLabel').textContent = usePanel ? 'From panel #' : 'From layer #';
   document.getElementById('rangeToLabel').textContent = usePanel ? 'To panel #' : 'To layer #';
   document.getElementById('printRangeSection').style.display = 'block';
@@ -2145,7 +2148,7 @@ function buildPrintView(){
       body += `<path d="${pathD}" fill="none" stroke="black" stroke-width="0.35" fill-rule="evenodd"/>${holeSVG}`;
       // Big layer number at center of content area
       body += bigNumberSVG(t.layerIdx+1, svgW/2, margin + contentH/2, Math.min(contentW, contentH));
-      labelText = `${pieceWordCap} ${t.layerIdx+1} / ${layers.length} — page ${t.pageNum}/${t.totalPages} — row ${t.row+1} col ${t.col+1} — cut solid line, overlap edges to align adjacent tiles`;
+      labelText = `${pieceWordCap} ${t.layerIdx+1} / ${printedLayerCount} — page ${t.pageNum}/${t.totalPages} — row ${t.row+1} col ${t.col+1} — cut solid line, overlap edges to align adjacent tiles`;
     } else {
       // Packed page — draw each placement
       page.placements.forEach(pl=>{
@@ -2175,7 +2178,7 @@ function buildPrintView(){
         // Per-shape label (below the shape, in mm-scale SVG text)
         const lx = margin + pl.dx;
         const ly = margin + pl.dy + pl.h + 2.5;
-        body += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-family="monospace" font-size="3" fill="#000">${pieceWordCap} ${pl.layerIdx+1}/${layers.length}</text>`;
+        body += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-family="monospace" font-size="3" fill="#000">${pieceWordCap} ${pl.layerIdx+1}/${printedLayerCount}</text>`;
       });
       labelText = `Page ${pageIdx+1} / ${pages.length} — ${page.placements.length} ${pieceWord}${page.placements.length===1?'':'s'} — cut solid lines`;
     }
