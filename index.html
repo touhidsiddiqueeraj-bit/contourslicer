@@ -318,6 +318,8 @@
           </div>
         </div>
         <div style="display:flex;gap:6px;">
+          <button id="undoBtn" title="Undo settings change (Ctrl+Z)" disabled style="opacity:0.5;">&#8630; Undo</button>
+          <button id="redoBtn" title="Redo settings change (Ctrl+Y)" disabled style="opacity:0.5;">&#8634; Redo</button>
           <button id="saveProjectBtn" title="Save project (STL + settings)">Save</button>
           <button id="loadProjectBtn" title="Load saved project">Load</button>
           <button id="helpBtn" title="Guided tour">Tour</button>
@@ -356,8 +358,19 @@
 
       <div class="section">
         <h2>3 &middot; Real-world scale</h2>
-        <div class="radio-group">
-          <label><input type="radio" name="scalemode" value="native" checked> STL units are already millimeters</label>
+        <div class="field">
+          <label>STL units <span id="unitsNote" style="font-weight:normal;color:var(--dim);font-size:11px;">— auto-detected from file</span></label>
+          <select id="stlUnits">
+            <option value="mm">Millimeters (mm) &mdash; factor &times;1</option>
+            <option value="cm">Centimeters (cm) &mdash; factor &times;10</option>
+            <option value="m">Meters (m) &mdash; factor &times;1000</option>
+            <option value="in">Inches (in) &mdash; factor &times;25.4</option>
+            <option value="ft">Feet (ft) &mdash; factor &times;304.8</option>
+            <option value="micron">Microns (&micro;m) &mdash; factor &times;0.001</option>
+          </select>
+        </div>
+        <div class="radio-group" style="margin-top:8px;">
+          <label><input type="radio" name="scalemode" value="native" checked> Use detected units as-is (in mm)</label>
           <label><input type="radio" name="scalemode" value="fit"> Scale so tallest dimension (Z) equals &rarr;</label>
         </div>
         <div class="field" style="margin-top:8px;">
@@ -387,6 +400,14 @@
           </div>
         </div>
         <div class="field">
+          <label>Slice axis <span style="font-weight:normal;color:var(--dim);font-size:11px;">(stacked-layers mode only)</span></label>
+          <select id="sliceAxis">
+            <option value="z" selected>Z (vertical, default)</option>
+            <option value="x">X (slice perpendicular to X — model stands on its X-face)</option>
+            <option value="y">Y (slice perpendicular to Y — model stands on its Y-face)</option>
+          </select>
+        </div>
+        <div class="field">
           <label>MDF sheet size (for material estimate)</label>
           <select id="sheetSize">
             <option value="2440x1220">2440 &times; 1220mm (8 &times; 4 ft, standard)</option>
@@ -403,7 +424,43 @@
         </div>
         <label class="checkline" id="mirrorRow"><input type="checkbox" id="mirrorHalf"> Mirror half-stack (cut half, flip for the other half &mdash; for left-right symmetric models)</label>
         <label class="checkline" id="foldLinesRow" style="display:none;"><input type="checkbox" id="foldLines"> Unfold as one piece with fold lines (panel mode only)</label>
+        <label class="checkline" id="lockingTabsRow"><input type="checkbox" id="lockingTabs"> Add locking tabs &amp; slots (interlock adjacent layers for stronger, self-registering assembly)</label>
+        <div id="lockingTabsField" style="display:none;padding-left:20px;">
+          <div class="row2">
+            <div class="field">
+              <label>Tab width (mm)</label>
+              <input type="number" id="tabWidth" value="20" min="5" step="1">
+            </div>
+            <div class="field">
+              <label>Tab height (mm)</label>
+              <input type="number" id="tabHeight" value="10" min="3" step="1">
+            </div>
+          </div>
+          <div class="field">
+            <label>Tabs per layer (evenly spaced around perimeter)</label>
+            <input type="number" id="tabCount" value="4" min="2" max="12" step="1">
+          </div>
+          <div class="note">Tabs stick up from one layer into a matching slot in the layer above — locks the stack against lateral sliding. Only applies to stacked-layers mode.</div>
+        </div>
         <div class="note">Kerf offset shrinks each outline inward slightly to compensate for blade width. Leave at 0 if unsure — hand-cut tolerance usually dominates anyway.</div>
+        <label class="checkline"><input type="checkbox" id="hollowInfill"> Hollow out large layers (honeycomb infill — saves MDF & weight on big pieces)</label>
+        <div id="hollowField" style="display:none;padding-left:20px;">
+          <div class="row2">
+            <div class="field">
+              <label>Hex cell size (mm)</label>
+              <input type="number" id="hollowCell" value="30" min="8" step="2">
+            </div>
+            <div class="field">
+              <label>Border kept around edge (mm)</label>
+              <input type="number" id="hollowBorder" value="15" min="5" step="1">
+            </div>
+          </div>
+          <div class="field">
+            <label>Only hollow layers larger than (mm²)</label>
+            <input type="number" id="hollowMinArea" value="10000" min="1000" step="1000">
+          </div>
+          <div class="note">Each hex is a small interior cut-out — drill a starter hole, then jigsaw the hex outline. Skip if you need solid layers for strength.</div>
+        </div>
       </div>
 
       <div class="section">
@@ -466,12 +523,19 @@
       </div>
 
       <div class="section">
+        <div id="oversizeWarn" class="note" style="display:none;background:rgba(232,133,58,0.15);border:1px solid var(--accent);padding:8px 10px;border-radius:4px;margin-bottom:8px;">
+          <strong>&#9888; <span id="oversizeCount">0</span> layer(s) exceed the selected paper size.</strong> They will be tiled across multiple pages. <button class="btn-secondary" id="autoScaleFit" style="margin-left:6px;width:auto;padding:4px 10px;font-size:11px;">Auto-fit to paper</button>
+        </div>
         <button class="btn-primary" id="sliceBtn" disabled>Compute (auto-detect)</button>
         <button class="btn-secondary" id="printBtn" style="display:none;">Open print templates</button>
         <button class="btn-secondary" id="assemblyBtn" style="display:none;">Preview assembled result</button>
         <div class="row2" style="margin-top:8px;">
           <button class="btn-secondary" id="exportSvgBtn" style="display:none;margin-top:0;">Download SVG (single)</button>
           <button class="btn-secondary" id="exportSvgZipBtn" style="display:none;margin-top:0;">Download SVGs (ZIP, per layer)</button>
+        </div>
+        <div class="row2" style="margin-top:8px;">
+          <button class="btn-secondary" id="exportPdfBtn" style="display:none;margin-top:0;">Download PDF (vector, multi-page)</button>
+          <span class="note" id="pdfNote" style="display:none;margin-top:0;align-self:center;">Direct PDF — no browser print dialog needed.</span>
         </div>
         <div class="stat-grid" id="stats" style="display:none;">
           <div class="stat"><div class="v" id="statLayers">–</div><div class="l">layers</div></div>
@@ -480,6 +544,7 @@
           <div class="stat"><div class="v" id="statHeight">–</div><div class="l">final stack height</div></div>
           <div class="stat" id="statSheetsWrap"><div class="v" id="statSheets">–</div><div class="l">MDF sheets needed</div></div>
           <div class="stat" id="statDowelWrap"><div class="v" id="statDowel">–</div><div class="l">dowel rod length</div></div>
+          <div class="stat" id="statOversizedWrap" style="display:none;"><div class="v" id="statOversized" style="color:var(--accent);">–</div><div class="l">layers exceed paper</div></div>
         </div>
       </div>
 
@@ -608,11 +673,190 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 // ---------- state ----------
 let geometry = null;        // raw THREE.BufferGeometry (unscaled, native units)
-let scaleFactor = 1;        // native units -> mm
+let scaleFactor = 1;        // native units -> mm (excluding user-target-height fit)
+let unitFactor = 1;         // multiplier from native unit -> mm (mm=1, cm=10, m=1000, in=25.4, ...)
+let detectedUnit = 'mm';    // last auto-detected unit
+let stlHeaderBytes = null;  // raw 80-byte header (binary STL) or first line (ASCII STL) — used for unit hints
 let layers = [];            // [{loops:[[{x,y},...], ...]}] in mm — either Z-slices or flat-face panels
 let decompMode = 'auto'; // 'auto' | 'contour' | 'panel'
 let resolvedDecompMode = 'contour'; // the actual mode after resolving 'auto'
 let modelBoundsMM = null;   // {minX,maxX,minY,maxY,minZ,maxZ}
+
+// ---------- unit detection ----------
+// STL is a unitless format. Three hints can rescue a model from being interpreted
+// at the wrong scale:
+//   1. Binary STL: the 80-byte file header often contains a free-text comment
+//      like "Made in Fusion 360, units: mm" or "inch" — many CAD tools write this.
+//   2. ASCII STL: the "solid <name>" line sometimes carries a unit hint.
+//   3. As a fallback, the model's bounding-box diagonal in native units gives a
+//      strong prior: most real-world objects fit in 10–1000 mm; a 0.05-diagonal
+//      model is almost certainly in meters, a 50 000-diagonal one is in microns.
+const UNIT_FACTORS = { mm:1, cm:10, m:1000, in:25.4, ft:304.8, micron:0.001 };
+const UNIT_LABELS = { mm:'millimeters', cm:'centimeters', m:'meters', in:'inches', ft:'feet', micron:'microns' };
+
+// ---------- undo / redo (settings only — not geometry rotations) ----------
+// Snapshot key UI settings (checkboxes, inputs, selects, radios) on a debounced
+// schedule. Each "checkpoint" becomes one undo step. Redo walks forward through
+// the redo stack. The stack is bounded to 50 entries to avoid memory bloat.
+const UNDO_SETTINGS_IDS = [
+  // Section 2: decomposition
+  'decompmode',  // radio group
+  // Section 3: scale
+  'stlUnits', 'scalemode', 'targetHeight',
+  // Section 4: cutting params
+  'thickness', 'kerf', 'sliceAxis', 'sheetSize', 'sheetW', 'sheetH',
+  'mirrorHalf', 'foldLines', 'lockingTabs', 'tabWidth', 'tabHeight', 'tabCount',
+  'hollowInfill', 'hollowCell', 'hollowBorder', 'hollowMinArea',
+  // Section 5: print layout
+  'paperSize', 'overlap', 'shapeSpacing', 'printScale',
+  'alignHoles', 'holeMode', 'holeDia',
+  // Section 6: print range
+  'rangeFrom', 'rangeTo', 'includeCover'
+];
+const UNDO_MAX = 50;
+let undoStack = [];
+let redoStack = [];
+let undoPause = false;     // set while restoring, to avoid feedback loops
+let undoDebounce = null;
+
+function snapshotSettings(){
+  const snap = {};
+  UNDO_SETTINGS_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if(!el){ return; }
+    if(el.type === 'radio'){
+      // skip — handled via radio-group key
+    } else if(el.type === 'checkbox'){
+      snap[id] = el.checked;
+    } else {
+      snap[id] = el.value;
+    }
+  });
+  // Radio groups
+  snap.decompmode = (document.querySelector('input[name=decompmode]:checked') || {}).value || 'auto';
+  snap.scalemode  = (document.querySelector('input[name=scalemode]:checked')  || {}).value || 'native';
+  return snap;
+}
+
+function restoreSettings(snap){
+  undoPause = true;
+  Object.keys(snap).forEach(id => {
+    if(id === 'decompmode' || id === 'scalemode'){
+      const r = document.querySelector(`input[name=${id}][value="${snap[id]}"]`);
+      if(r){ r.checked = true; r.dispatchEvent(new Event('change', {bubbles:true})); }
+      return;
+    }
+    const el = document.getElementById(id);
+    if(!el) return;
+    if(el.type === 'checkbox'){
+      if(el.checked !== snap[id]){ el.checked = snap[id]; el.dispatchEvent(new Event('change', {bubbles:true})); }
+    } else {
+      if(el.value !== String(snap[id])){ el.value = snap[id]; el.dispatchEvent(new Event('input', {bubbles:true})); el.dispatchEvent(new Event('change', {bubbles:true})); }
+    }
+  });
+  // Repaint dependent UI
+  if(typeof onPrintScaleChange === 'function') onPrintScaleChange();
+  if(layers.length && typeof recomputePageStat === 'function') recomputePageStat();
+  undoPause = false;
+  updateUndoRedoButtons();
+}
+
+function settingsEqual(a, b){
+  const ka = Object.keys(a), kb = Object.keys(b);
+  if(ka.length !== kb.length) return false;
+  for(const k of ka){ if(a[k] !== b[k]) return false; }
+  return true;
+}
+
+function pushUndoSnapshot(){
+  if(undoPause) return;
+  if(undoDebounce) clearTimeout(undoDebounce);
+  undoDebounce = setTimeout(()=>{
+    const snap = snapshotSettings();
+    if(undoStack.length && settingsEqual(undoStack[undoStack.length-1], snap)) return;
+    undoStack.push(snap);
+    if(undoStack.length > UNDO_MAX) undoStack.shift();
+    // Any new edit clears the redo stack
+    redoStack = [];
+    updateUndoRedoButtons();
+  }, 350);
+}
+
+function updateUndoRedoButtons(){
+  const u = document.getElementById('undoBtn');
+  const r = document.getElementById('redoBtn');
+  if(u){
+    u.disabled = undoStack.length === 0;
+    u.style.opacity = u.disabled ? 0.5 : 1.0;
+  }
+  if(r){
+    r.disabled = redoStack.length === 0;
+    r.style.opacity = r.disabled ? 0.5 : 1.0;
+  }
+}
+
+function doUndo(){
+  if(undoStack.length === 0) return;
+  // Push current state to redo, pop & restore previous
+  redoStack.push(snapshotSettings());
+  const prev = undoStack.pop();
+  restoreSettings(prev);
+}
+
+function doRedo(){
+  if(redoStack.length === 0) return;
+  undoStack.push(snapshotSettings());
+  const next = redoStack.pop();
+  restoreSettings(next);
+}
+
+// Wire all setting inputs to push to undo stack on change
+function initUndoTracking(){
+  UNDO_SETTINGS_IDS.forEach(id => {
+    if(id === 'decompmode' || id === 'scalemode'){
+      document.querySelectorAll(`input[name=${id}]`).forEach(r => {
+        r.addEventListener('change', pushUndoSnapshot);
+      });
+    } else {
+      const el = document.getElementById(id);
+      if(el){
+        el.addEventListener('change', pushUndoSnapshot);
+        el.addEventListener('input', pushUndoSnapshot);
+      }
+    }
+  });
+  document.getElementById('undoBtn').addEventListener('click', doUndo);
+  document.getElementById('redoBtn').addEventListener('click', doRedo);
+  // Seed the initial snapshot
+  undoStack = [snapshotSettings()];
+  updateUndoRedoButtons();
+}
+
+function detectUnits(headerBytes, bboxDiag){
+  // 1) Try header text (binary STL header / ASCII first line)
+  if(headerBytes && headerBytes.length){
+    let text = '';
+    try{
+      text = new TextDecoder('ascii').decode(headerBytes).toLowerCase();
+    }catch(_){ text = ''; }
+    // Word-boundary matches to avoid false positives like "committee" matching "m"
+    if(/(^|[^a-z])mm([^a-z]|$)|millimeter/.test(text)) return 'mm';
+    if(/(^|[^a-z])cm([^a-z]|$)|centimeter/.test(text)) return 'cm';
+    if(/(^|[^a-z])in(ches|ch)?([^a-z]|$)/.test(text)) return 'in';
+    if(/(^|[^a-z])ft\b|feet|foot/.test(text)) return 'ft';
+    if(/micron|µm|micrometer/.test(text)) return 'micron';
+    if(/(^|[^a-z])m(eter|etre)?([^a-z]|$)/.test(text)) return 'm';
+  }
+  // 2) Fallback: bbox-diagonal heuristic
+  // Typical real-world objects are 10–2000 mm along their longest dim.
+  const d = bboxDiag || 0;
+  if(d <= 0) return 'mm';
+  if(d < 1)        return 'm';       // e.g. 0.5 → likely meters (500 mm object)
+  if(d < 10)       return 'cm';      // 1–10 native ≈ 10–100 mm
+  if(d < 2000)     return 'mm';      // the common case
+  if(d < 50000)    return 'cm';      // very large for mm — probably cm
+  return 'micron';                   // > 50 000 → almost certainly microns
+}
 let paperMM = { w:210, h:297 };
 
 document.querySelectorAll('input[name=decompmode]').forEach(r=>{
@@ -639,6 +883,19 @@ document.querySelectorAll('input[name=decompmode]').forEach(r=>{
     document.getElementById('foldLinesRow').style.display = isPanel ? 'flex' : 'none';
     // Mirror option only applies to contour mode
     document.getElementById('mirrorRow').style.display = isPanel ? 'none' : 'flex';
+    // Locking-tabs option only applies to contour mode
+    document.getElementById('lockingTabsRow').style.display = isPanel ? 'none' : 'flex';
+    if(isPanel){
+      document.getElementById('lockingTabs').checked = false;
+      document.getElementById('lockingTabsField').style.display = 'none';
+    }
+    // Honeycomb infill also only applies to contour mode
+    const hollowRow = document.getElementById('hollowInfill').parentElement;
+    if(hollowRow) hollowRow.style.display = isPanel ? 'none' : 'flex';
+    if(isPanel){
+      document.getElementById('hollowInfill').checked = false;
+      document.getElementById('hollowField').style.display = 'none';
+    }
     // Clear stale results so the old layers can't be used with the new mode
     resetSliceResults();
     // If switching to auto and we have a model, detect now so the note shows
@@ -1103,8 +1360,19 @@ document.getElementById('rotZ').addEventListener('click', ()=>rotateModel('z'));
 
 // ---------- keyboard shortcuts ----------
 window.addEventListener('keydown', (e)=>{
-  if(e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+  if(e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
+    // Allow undo/redo even when focused in an input — but only for the modifier combos
+    if(!((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z' || e.key === 'y' || e.key === 'Y'))) return;
+  }
   const k = e.key.toLowerCase();
+  // Undo: Ctrl+Z (no shift), Ctrl+Y
+  // Redo: Ctrl+Shift+Z, Ctrl+Shift+Y
+  if((e.ctrlKey || e.metaKey) && (k === 'z' || k === 'y')){
+    e.preventDefault();
+    const isRedo = e.shiftKey ? (k === 'z') : (k === 'y');
+    if(isRedo) doRedo(); else doUndo();
+    return;
+  }
   if(k==='g') toggleGridBtn.click();
   else if(k==='r') toggleRulerBtn.click();
   else if(k==='w') toggleWireBtn.click();
@@ -1183,6 +1451,13 @@ function loadFile(file){
   reader.onload = (ev)=>{
     const loader = new STLLoader();
     const geo = loader.parse(ev.target.result);
+    // Capture up to 80 bytes of the file header for unit detection.
+    // For binary STL the first 80 bytes are the human-readable comment header.
+    // For ASCII STL the first 80 bytes contain the "solid <name>" line which
+    // sometimes carries a unit hint (e.g. "solid model_mm").
+    try{
+      stlHeaderBytes = new Uint8Array(ev.target.result.slice(0, 80));
+    }catch(_){ stlHeaderBytes = null; }
     useGeometry(geo);
   };
   reader.readAsArrayBuffer(file);
@@ -1192,6 +1467,21 @@ function useGeometry(geo){
   geometry = geo.index ? geo.toNonIndexed() : geo;
   geometry.computeVertexNormals();
   geometry.computeBoundingBox();
+
+  // ---- Auto-detect units from header + bbox diagonal ----
+  const bb = geometry.boundingBox;
+  const diag = bb.min.distanceTo(bb.max);
+  detectedUnit = detectUnits(stlHeaderBytes, diag);
+  // Apply detected unit to the dropdown (user can override afterwards)
+  const unitSel = document.getElementById('stlUnits');
+  if(unitSel) unitSel.value = detectedUnit;
+  unitFactor = UNIT_FACTORS[detectedUnit] || 1;
+  const noteEl = document.getElementById('unitsNote');
+  if(noteEl){
+    const dMm = (diag * unitFactor).toFixed(0);
+    noteEl.textContent = `— auto-detected: ${UNIT_LABELS[detectedUnit]} (model diagonal ≈ ${dMm} mm). Override if wrong.`;
+  }
+
   setupModelView();
   document.getElementById('sliceBtn').disabled = false;
   document.getElementById('emptyState').style.display = 'none';
@@ -1258,6 +1548,12 @@ themeBtn.addEventListener('click', ()=>{
 });
 applyTheme();
 
+// Initialize undo/redo tracking after all UI elements are defined.
+// This must run after all the elements referenced in UNDO_SETTINGS_IDS exist
+// in the DOM, but before any user interaction. Since this <script type="module">
+// runs after the body is parsed, all elements are already present.
+initUndoTracking();
+
 function setupModelView(){
   if(meshObj){ scene.remove(meshObj); }
   const mat = new THREE.MeshStandardMaterial({ color:0xe8853a, metalness:0.05, roughness:0.7, side:THREE.DoubleSide, wireframe:wireframeOn });
@@ -1275,14 +1571,39 @@ function updateScaleFactor(){
   if(!geometry) return;
   const bb = geometry.boundingBox;
   const size = new THREE.Vector3(); bb.getSize(size);
+  // Read unit override from the dropdown (defaults to last detected)
+  const sel = document.getElementById('stlUnits');
+  if(sel){
+    unitFactor = UNIT_FACTORS[sel.value] || 1;
+  }
   const mode = document.querySelector('input[name=scalemode]:checked').value;
   if(mode === 'native'){
-    scaleFactor = 1;
+    // native = use detected/selected units converted to mm
+    scaleFactor = unitFactor;
   } else {
+    // fit = scale so Z dimension matches targetHeight (in mm)
     const target = parseFloat(document.getElementById('targetHeight').value) || 1;
     scaleFactor = target / size.z;
   }
 }
+
+document.getElementById('stlUnits').addEventListener('change', ()=>{
+  updateScaleFactor();
+  lastGridPpm = 0; rebuildGrid(); updateDims();
+  // Refresh the units note to reflect the override
+  const noteEl = document.getElementById('unitsNote');
+  const bb = geometry && geometry.boundingBox;
+  if(noteEl && bb){
+    const diag = bb.min.distanceTo(bb.max);
+    const u = document.getElementById('stlUnits').value;
+    const dMm = (diag * UNIT_FACTORS[u]).toFixed(0);
+    if(u === detectedUnit){
+      noteEl.textContent = `— auto-detected: ${UNIT_LABELS[u]} (model diagonal ≈ ${dMm} mm). Override if wrong.`;
+    } else {
+      noteEl.textContent = `— overridden to ${UNIT_LABELS[u]} (model diagonal ≈ ${dMm} mm).`;
+    }
+  }
+});
 
 document.querySelectorAll('input[name=scalemode]').forEach(r=>{
   r.addEventListener('change', ()=>{
@@ -1316,6 +1637,58 @@ function sliceAtZ(zc){
   for(let i=0;i<pos.count;i+=3){
     v0.fromBufferAttribute(pos,i); v1.fromBufferAttribute(pos,i+1); v2.fromBufferAttribute(pos,i+2);
     const s = triPlaneSeg(v0,v1,v2,zc);
+    if(s) segs.push(s);
+  }
+  return stitchSegments(segs);
+}
+
+// ---------- multi-axis slicing ----------
+// Same idea as sliceAtZ but intersects triangles with x=xc or y=yc.
+// The resulting 2D loop is in the OTHER two axes:
+//   axis='x' -> plane x=xc, output {x: y, y: z}  (so the slice is the YZ plane, X is "up")
+//   axis='y' -> plane y=yc, output {x: x, y: z}  (slice is the XZ plane, Y is "up")
+//   axis='z' -> plane z=zc, output {x: x, y: y}  (slice is the XY plane, Z is "up") — same as sliceAtZ
+// This keeps every layer's loops in a consistent 2D coordinate system regardless of
+// slice axis, so the rest of the pipeline (modelBoundsMM, print layout, assembly
+// preview) needs no axis-specific handling — only the slicing loop changes.
+function triPlaneSegAxis(v0, v1, v2, c, axis){
+  const pts = [];
+  const edges = [[v0,v1],[v1,v2],[v2,v0]];
+  for(const [a,b] of edges){
+    const aCoord = axis==='x' ? a.x : (axis==='y' ? a.y : a.z);
+    const bCoord = axis==='x' ? b.x : (axis==='y' ? b.y : b.z);
+    if((aCoord <= c && bCoord > c) || (bCoord <= c && aCoord > c)){
+      const t = (c - aCoord) / (bCoord - aCoord);
+      // Project the 3D intersection point onto the 2D plane perpendicular to `axis`.
+      // Output (x,y) is the 2D coords of the OTHER two axes.
+      let ox, oy;
+      if(axis === 'x'){
+        ox = a.y + (b.y - a.y) * t;  // Y -> output X
+        oy = a.z + (b.z - a.z) * t;  // Z -> output Y
+      } else if(axis === 'y'){
+        ox = a.x + (b.x - a.x) * t;  // X -> output X
+        oy = a.z + (b.z - a.z) * t;  // Z -> output Y
+      } else { // 'z'
+        ox = a.x + (b.x - a.x) * t;
+        oy = a.y + (b.y - a.y) * t;
+      }
+      pts.push({ x: ox, y: oy });
+    }
+  }
+  if(pts.length >= 2) return [pts[0], pts[1]];
+  return null;
+}
+
+function sliceAt(c, axis){
+  if(axis === 'z') return sliceAtZ(c);
+  const pos = geometry.attributes.position;
+  const segs = [];
+  const v0 = new THREE.Vector3(), v1 = new THREE.Vector3(), v2 = new THREE.Vector3();
+  for(let i=0; i<pos.count; i+=3){
+    v0.fromBufferAttribute(pos, i);
+    v1.fromBufferAttribute(pos, i+1);
+    v2.fromBufferAttribute(pos, i+2);
+    const s = triPlaneSegAxis(v0, v1, v2, c, axis);
     if(s) segs.push(s);
   }
   return stitchSegments(segs);
@@ -1388,16 +1761,161 @@ function pointInLoops(pt, loops){
 
 function offsetLoopInward(loop, dist){
   if(dist<=0) return loop;
-  // simple centroid-scale approximation, adequate for small kerf offsets
-  let cx=0,cy=0;
-  loop.forEach(p=>{cx+=p.x; cy+=p.y;});
-  cx/=loop.length; cy/=loop.length;
-  return loop.map(p=>{
-    const dx=p.x-cx, dy=p.y-cy;
-    const len=Math.hypot(dx,dy)||1;
-    const shrink = Math.max(0, (len-dist)/len);
-    return { x: cx+dx*shrink, y: cy+dy*shrink };
+  // Proper per-edge inward offset.
+  // For each edge i->i+1, compute the inward normal (perpendicular to the edge,
+  // pointing into the polygon for a CCW loop). Move the edge inward by `dist`.
+  // The new vertex at vertex i is the intersection of the two offset edges
+  // adjacent to it. This correctly handles convex polygons and produces a
+  // reasonable approximation for concave ones at small `dist` (the kerf case).
+  //
+  // For self-intersecting results at high offsets (concave corners that collide),
+  // we fall back to the centroid-shrink for that vertex — never produces invalid
+  // geometry, just slightly less accurate.
+
+  // 1) Determine loop winding (signed area). Inward normal depends on winding.
+  let signedArea = 0;
+  for(let i=0; i<loop.length; i++){
+    const p = loop[i], q = loop[(i+1) % loop.length];
+    signedArea += p.x*q.y - q.x*p.y;
+  }
+  const ccw = signedArea > 0; // CCW if positive in standard math (Y-up)
+
+  const n = loop.length;
+  if(n < 3) return loop;
+
+  // 2) Compute the inward normal of each edge
+  //    For CCW loop, inward normal of edge (p->q) is (-dy, dx) normalized.
+  //    For CW loop, inward normal of edge (p->q) is (dy, -dx) normalized.
+  const edges = [];
+  for(let i=0; i<n; i++){
+    const p = loop[i], q = loop[(i+1) % n];
+    const dx = q.x - p.x, dy = q.y - p.y;
+    const len = Math.hypot(dx, dy);
+    if(len < 1e-10) { edges.push(null); continue; }
+    let nx, ny;
+    if(ccw){ nx = -dy/len; ny = dx/len; }
+    else   { nx =  dy/len; ny = -dx/len; }
+    edges.push({ p, q, nx, ny, dx: dx/len, dy: dy/len });
+  }
+
+  // 3) For each vertex, find intersection of the two offset adjacent edges.
+  //    Edge before vertex i: edge (i-1)->i, offset by dist along its inward normal.
+  //    Edge after vertex i:  edge i->(i+1), offset by dist along its inward normal.
+  //    Offset edge equation: point P on edge satisfies dot(P - edge.p, edge.n) = dist.
+  //    i.e. the offset edge is parallel to the original, shifted by `dist` along `n`.
+  const result = [];
+  for(let i=0; i<n; i++){
+    const prevEdge = edges[(i - 1 + n) % n];
+    const currEdge = edges[i];
+    if(!prevEdge || !currEdge){
+      // Degenerate — keep original vertex
+      result.push({ x: loop[i].x, y: loop[i].y });
+      continue;
+    }
+    // Offset edge start points
+    const a1 = { x: prevEdge.p.x + prevEdge.nx * dist, y: prevEdge.p.y + prevEdge.ny * dist };
+    const a2 = { x: prevEdge.q.x + prevEdge.nx * dist, y: prevEdge.q.y + prevEdge.ny * dist };
+    const b1 = { x: currEdge.p.x + currEdge.nx * dist, y: currEdge.p.y + currEdge.ny * dist };
+    const b2 = { x: currEdge.q.x + currEdge.nx * dist, y: currEdge.q.y + currEdge.ny * dist };
+
+    // Intersect line (a1->a2) with line (b1->b2)
+    const ex = a2.x - a1.x, ey = a2.y - a1.y;
+    const fx = b2.x - b1.x, fy = b2.y - b1.y;
+    const denom = ex*fy - ey*fx;
+    if(Math.abs(denom) < 1e-10){
+      // Parallel edges — keep original vertex (rare for non-degenerate loops)
+      result.push({ x: loop[i].x, y: loop[i].y });
+      continue;
+    }
+    const t = ((b1.x - a1.x)*fy - (b1.y - a1.y)*fx) / denom;
+    const ix = a1.x + ex * t;
+    const iy = a1.y + ey * t;
+
+    // Sanity: if the intersection is "very far" from the original vertex (which
+    // happens at sharp concave corners where the offset edges diverge), fall
+    // back to a centroid-shrink for this vertex to avoid huge spikes.
+    const dxv = ix - loop[i].x, dyv = iy - loop[i].y;
+    const distFromOrig = Math.hypot(dxv, dyv);
+    if(distFromOrig > dist * 8){
+      // Sharp concave corner — fall back to shrinking toward the loop centroid
+      let cx=0,cy=0;
+      loop.forEach(p=>{cx+=p.x; cy+=p.y;});
+      cx/=loop.length; cy/=loop.length;
+      const px = loop[i].x - cx, py = loop[i].y - cy;
+      const plen = Math.hypot(px, py) || 1;
+      const shrink = Math.max(0, (plen - dist) / plen);
+      result.push({ x: cx + px*shrink, y: cy + py*shrink });
+    } else {
+      result.push({ x: ix, y: iy });
+    }
+  }
+  return result;
+}
+
+// ---------- honeycomb infill ----------
+// Generates a grid of regular hexagons clipped to the interior of `outerLoop`,
+// leaving a `border`-thick margin from the outline. Each hex is a separate
+// closed loop that the user cuts out as an interior hole — saves MDF and
+// weight on big layers without compromising structural integrity much.
+//
+// Hex geometry: flat-top hexagon with circumradius R = cellSize/2.
+//   width  = 2R = cellSize
+//   height = R * sqrt(3) ≈ R * 1.732
+// Grid spacing: dx = 1.5R (columns), dy = R*sqrt(3) (rows), offset every other column by dy/2.
+function generateHoneycomb(outerLoop, cellSize, border){
+  if(!outerLoop || outerLoop.length < 3) return [];
+  const R = cellSize / 2;
+  const sqrt3 = Math.sqrt(3);
+  const hexH = R * sqrt3;
+  const colStep = 1.5 * R;
+  // Inset the outer loop by `border` so we don't place hexes too close to the edge
+  const insetLoop = offsetLoopInward(outerLoop, border);
+  if(!insetLoop || insetLoop.length < 3) return [];
+  // Bounding box of inset loop
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  insetLoop.forEach(p=>{
+    if(p.x<minX)minX=p.x; if(p.x>maxX)maxX=p.x;
+    if(p.y<minY)minY=p.y; if(p.y>maxY)maxY=p.y;
   });
+  // Build hex centers across the bounding box; keep only those whose center is
+  // inside the inset loop (cheap test — point-in-polygon).
+  const hexes = [];
+  const colCount = Math.ceil((maxX - minX) / colStep) + 2;
+  const rowCount = Math.ceil((maxY - minY) / hexH) + 2;
+  for(let col=0; col<=colCount; col++){
+    for(let row=0; row<=rowCount; row++){
+      const cx = minX + col * colStep;
+      const cy = minY + row * hexH + (col % 2 === 1 ? hexH/2 : 0);
+      if(!pointInLoops({x:cx, y:cy}, [insetLoop])) continue;
+      // Flat-top hexagon vertices
+      const verts = [];
+      for(let k=0; k<6; k++){
+        const ang = (k * Math.PI) / 3; // 0°, 60°, 120°, 180°, 240°, 300°
+        verts.push({ x: cx + R * Math.cos(ang), y: cy + R * Math.sin(ang) });
+      }
+      hexes.push(verts);
+    }
+  }
+  return hexes;
+}
+
+// Returns all hollow hex loops for a given layer, or [] if hollowing is off or
+// the layer is too small. Used by buildPrintView, exportSVG, exportSvgZip.
+function getHollowHexes(layer){
+  if(!document.getElementById('hollowInfill') || !document.getElementById('hollowInfill').checked) return [];
+  if(resolvedDecompMode !== 'contour') return [];
+  const cellSize = parseFloat(document.getElementById('hollowCell').value) || 30;
+  const border = parseFloat(document.getElementById('hollowBorder').value) || 15;
+  const minArea = parseFloat(document.getElementById('hollowMinArea').value) || 10000;
+  // Find the largest outer loop of this layer (hollow that one; leave small
+  // disjoint loops alone — they're too small to bother with)
+  let outerLoop = null, bestArea = 0;
+  layer.loops.forEach(loop=>{
+    const a = polygonAreaAbs(loop);
+    if(a > bestArea){ bestArea = a; outerLoop = loop; }
+  });
+  if(!outerLoop || bestArea < minArea) return [];
+  return generateHoneycomb(outerLoop, cellSize, border);
 }
 
 // ---------- flat-panel (planar face) decomposition ----------
@@ -1583,20 +2101,24 @@ document.getElementById('sliceBtn').addEventListener('click', ()=>{
   } else {
     const kerf = parseFloat(document.getElementById('kerf').value) || 0;
     const bb = geometry.boundingBox;
-    const minZ = bb.min.z, maxZ = bb.max.z;
+    const sliceAxis = document.getElementById('sliceAxis').value || 'z';
+    // Slice along the chosen axis. The min/max of the bounding box along that
+    // axis define the slice range; the other two axes form the 2D loop output.
+    const axisMin = sliceAxis === 'x' ? bb.min.x : (sliceAxis === 'y' ? bb.min.y : bb.min.z);
+    const axisMax = sliceAxis === 'x' ? bb.max.x : (sliceAxis === 'y' ? bb.max.y : bb.max.z);
     const stepNative = thickness / scaleFactor;
     layers = [];
-    let z = minZ + stepNative/2;
-    while(z < maxZ){
-      const rawLoops = sliceAtZ(z);
+    let c = axisMin + stepNative/2;
+    while(c < axisMax){
+      const rawLoops = sliceAt(c, sliceAxis);
       if(rawLoops.length){
         const mmLoops = rawLoops.map(loop=>{
           const scaled = loop.map(p=>({x:p.x*scaleFactor, y:p.y*scaleFactor}));
           return offsetLoopInward(scaled, kerf/2);
         });
-        layers.push({ zNative:z, loops: mmLoops });
+        layers.push({ zNative:c, loops: mmLoops });
       }
-      z += stepNative;
+      c += stepNative;
     }
   }
 
@@ -1632,10 +2154,28 @@ document.getElementById('sliceBtn').addEventListener('click', ()=>{
 
   renderLayerStrip();
   updateStats(thickness);
+  // Show/hide the locking-tabs row depending on decomposition mode
+  document.getElementById('lockingTabsRow').style.display = usePanel ? 'none' : 'flex';
+  if(usePanel){
+    // Auto-uncheck locking tabs in panel mode (they don't apply)
+    document.getElementById('lockingTabs').checked = false;
+    document.getElementById('lockingTabsField').style.display = 'none';
+  }
+  // Show/hide honeycomb infill row depending on decomposition mode
+  const hollowRow = document.getElementById('hollowInfill').parentElement;
+  if(hollowRow) hollowRow.style.display = usePanel ? 'none' : 'flex';
+  if(usePanel){
+    document.getElementById('hollowInfill').checked = false;
+    document.getElementById('hollowField').style.display = 'none';
+  }
+  // Initial oversize check (also fires whenever paper/scale/range changes via recomputePageStat)
+  checkOversizedLayers();
   document.getElementById('printBtn').style.display = 'block';
   document.getElementById('assemblyBtn').style.display = 'block';
   document.getElementById('exportSvgBtn').style.display = 'block';
   document.getElementById('exportSvgZipBtn').style.display = 'block';
+  document.getElementById('exportPdfBtn').style.display = 'block';
+  document.getElementById('pdfNote').style.display = 'inline';
 });
 
 function clampInt(v,min,max){ return Math.min(Math.max(Math.round(v),min),max); }
@@ -1740,12 +2280,58 @@ document.getElementById('alignHoles').addEventListener('change', (e)=>{
   if(layers.length) updateStats(parseFloat(document.getElementById('thickness').value)||6);
 });
 
+// ---------- locking tabs ----------
+document.getElementById('lockingTabs').addEventListener('change', (e)=>{
+  const on = e.target.checked;
+  document.getElementById('lockingTabsField').style.display = on ? 'block' : 'none';
+  // Locking tabs only apply to stacked-layers mode (not panels)
+  if(on && resolvedDecompMode === 'panel'){
+    alert('Locking tabs only apply to Stacked Layers mode (they interlock adjacent layers vertically). They have no effect in Flat Panels mode.');
+    e.target.checked = false;
+    document.getElementById('lockingTabsField').style.display = 'none';
+  }
+  if(layers.length) renderLayerStrip();
+});
+['tabWidth','tabHeight','tabCount'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', ()=>{
+    if(layers.length){
+      updateStats(parseFloat(document.getElementById('thickness').value)||6);
+      renderLayerStrip();
+    }
+  });
+});
+
+// ---------- honeycomb infill ----------
+document.getElementById('hollowInfill').addEventListener('change', (e)=>{
+  const on = e.target.checked;
+  document.getElementById('hollowField').style.display = on ? 'block' : 'none';
+  if(on && resolvedDecompMode === 'panel'){
+    alert('Honeycomb infill only applies to Stacked Layers mode — panels are already flat pieces with no interior to hollow out.');
+    e.target.checked = false;
+    document.getElementById('hollowField').style.display = 'none';
+  }
+  if(layers.length){
+    recomputePageStat();
+    renderLayerStrip();
+  }
+});
+['hollowCell','hollowBorder','hollowMinArea'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', ()=>{
+    if(layers.length){
+      recomputePageStat();
+      renderLayerStrip();
+    }
+  });
+});
+
 function recomputePageStat(){
   if(!layers.length) return;
   const { pages } = getPrintLayout();
   let count = pages.length;
   if(document.getElementById('includeCover').checked) count += 2;
   document.getElementById('statPages').textContent = count;
+  // Also refresh the oversize warning — it depends on paper size + print scale
+  checkOversizedLayers();
 }
 
 ['rangeFrom','rangeTo','includeCover','overlap','paperSize','shapeSpacing','printScale'].forEach(id=>{
@@ -1755,6 +2341,64 @@ function recomputePageStat(){
     el.addEventListener('change', recomputePageStat);
   }
 });
+
+// ---------- oversize warning ----------
+// Checks every layer's scaled bounding box against the selected paper's
+// printable area. Layers that don't fit are auto-tiled by getPrintLayout(),
+// but the user gets a prominent warning + one-click "auto-fit to paper" so
+// they can shrink the whole job instead of cutting and taping dozens of pages.
+function checkOversizedLayers(){
+  if(!layers.length) return 0;
+  const paper = getPaperMM();
+  const margin = 8, labelH = 8;
+  const contentW = paper.w - margin*2;
+  const contentH = paper.h - margin*2 - labelH;
+  const s = getPrintScale();
+  let oversized = 0;
+  layers.forEach((l, idx)=>{
+    // Skip layers outside the print range — they're not being printed
+    const { from, to } = getPrintRange();
+    if(idx < from-1 || idx > to-1) return;
+    const bb = layerBounds(l);
+    if(bb.w * s > contentW || bb.h * s > contentH) oversized++;
+  });
+  const warn = document.getElementById('oversizeWarn');
+  const cnt  = document.getElementById('oversizeCount');
+  const statWrap = document.getElementById('statOversizedWrap');
+  const statVal  = document.getElementById('statOversized');
+  if(oversized > 0){
+    if(warn) warn.style.display = 'block';
+    if(cnt)  cnt.textContent = oversized;
+    if(statWrap) statWrap.style.display = 'block';
+    if(statVal)  statVal.textContent = oversized;
+  } else {
+    if(warn) warn.style.display = 'none';
+    if(statWrap) statWrap.style.display = 'none';
+  }
+  return oversized;
+}
+
+// One-click: shrink the print scale so the largest layer just fits on the page
+// (with a 5% safety margin). Clamped to [10%, 500%].
+function autoFitToPaper(){
+  if(!layers.length){ return; }
+  const paper = getPaperMM();
+  const margin = 8, labelH = 8;
+  const contentW = paper.w - margin*2;
+  const contentH = paper.h - margin*2 - labelH;
+  let maxDim = 0;
+  const { from, to } = getPrintRange();
+  for(let li = from-1; li <= to-1; li++){
+    const bb = layerBounds(layers[li]);
+    maxDim = Math.max(maxDim, bb.w, bb.h);
+  }
+  if(maxDim <= 0) return;
+  const targetScale = (Math.min(contentW, contentH) * 0.95) / maxDim;
+  const targetPct = Math.max(10, Math.min(500, Math.round(targetScale * 100)));
+  setPrintScalePct(targetPct);
+  // setPrintScalePct -> onPrintScaleChange -> recomputePageStat -> checkOversizedLayers
+}
+document.getElementById('autoScaleFit').addEventListener('click', autoFitToPaper);
 
 function getPaperMM(){
   const v = document.getElementById('paperSize').value;
@@ -1904,6 +2548,53 @@ function loopsToPath(loops, minX,minY,w,h, pad, size){
   }).join(' ');
 }
 
+// Build extra SVG fragments to overlay on a layer thumbnail:
+//   • locking tab markers (small filled circles at tab anchor points, in accent color)
+//   • slot markers (small hollow circles, in accent2 color)
+//   • hollow hex centers (tiny dots, in dim color) — only if there are very few
+//     to avoid clutter on small thumbnails
+function thumbnailOverlays(idx, layer, minX, minY, w, h, pad, size){
+  const scale = (size-pad*2) / Math.max(w,h,1);
+  const tx = px => ((px-minX)*scale+pad).toFixed(1);
+  const ty = py => (size-((py-minY)*scale+pad)).toFixed(1);
+  let svg = '';
+  // Locking tabs/slots
+  if(document.getElementById('lockingTabs') && document.getElementById('lockingTabs').checked && resolvedDecompMode === 'contour'){
+    const tabW = parseFloat(document.getElementById('tabWidth').value) || 20;
+    const tabH = parseFloat(document.getElementById('tabHeight').value) || 10;
+    const tabCount = Math.max(2, Math.min(12, parseInt(document.getElementById('tabCount').value) || 4));
+    const anchors = getConnectorAnchors(layer, modelBoundsMM, tabCount);
+    // Tab markers on every layer except the top
+    if(idx < layers.length - 1){
+      anchors.forEach(a => {
+        svg += `<circle cx="${tx(a.cx)}" cy="${ty(a.cy)}" r="1.4" fill="#e8853a" stroke="#e8853a" stroke-width="0.4"/>`;
+      });
+    }
+    // Slot markers on every layer except the bottom
+    if(idx > 0){
+      anchors.forEach(a => {
+        svg += `<circle cx="${tx(a.cx)}" cy="${ty(a.cy)}" r="1.2" fill="none" stroke="#4f9d8f" stroke-width="0.6"/>`;
+      });
+    }
+  }
+  // Hollow hex centers — only show count badge if there are many, otherwise dots
+  if(document.getElementById('hollowInfill') && document.getElementById('hollowInfill').checked && resolvedDecompMode === 'contour'){
+    const hexes = getHollowHexes(layer);
+    if(hexes.length > 0 && hexes.length <= 30){
+      hexes.forEach(hex => {
+        // Center of hex = average of vertices
+        let cx=0, cy=0;
+        hex.forEach(p => { cx += p.x; cy += p.y; });
+        cx /= hex.length; cy /= hex.length;
+        svg += `<circle cx="${tx(cx)}" cy="${ty(cy)}" r="0.5" fill="#8b9aa3"/>`;
+      });
+    } else if(hexes.length > 30){
+      svg += `<text x="${(size-12).toFixed(1)}" y="6" font-family="monospace" font-size="4" fill="#8b9aa3" text-anchor="end">⬡${hexes.length}</text>`;
+    }
+  }
+  return svg;
+}
+
 function renderLayerStrip(){
   const strip = document.getElementById('layerstrip');
   strip.innerHTML='';
@@ -1914,7 +2605,8 @@ function renderLayerStrip(){
     chip.className='layerchip';
     if(hiddenLayers.has(idx)) chip.classList.add('hidden');
     const d = loopsToPath(l.loops, minX, minY, w, h, 3, 44);
-    chip.innerHTML = `<svg viewBox="0 0 44 44"><path d="${d}" fill="#e8853a" fill-opacity="0.25" stroke="#e8853a" stroke-width="1" fill-rule="evenodd"/></svg><span class="num">${idx+1}</span>`;
+    const overlay = thumbnailOverlays(idx, l, minX, minY, w, h, 3, 44);
+    chip.innerHTML = `<svg viewBox="0 0 44 44"><path d="${d}" fill="#e8853a" fill-opacity="0.25" stroke="#e8853a" stroke-width="1" fill-rule="evenodd"/>${overlay}</svg><span class="num">${idx+1}</span>`;
     chip.title = `Layer ${idx+1} — click to hide/show, hover to preview slice plane`;
     chip.addEventListener('mouseenter', ()=> showSlicePlane(idx));
     chip.addEventListener('mouseleave', ()=> hideSlicePlane());
@@ -1925,6 +2617,155 @@ function renderLayerStrip(){
     strip.appendChild(chip);
   });
   document.getElementById('layerbar').classList.add('show');
+}
+
+// ---------- locking tabs / slots ----------
+// Tabs stick up from layer N into a matching slot in layer N+1. They make the
+// stack self-registering (no lateral sliding while the glue sets) and add
+// significant glue surface area for stronger joints.
+//
+// Approach (kept deliberately simple, no polygon boolean ops):
+//   • For each layer, fire N rays from the model's centroid at evenly-spaced
+//     angles. Find where each ray hits the layer's outer loop.
+//   • At each intersection point, place a small rectangle oriented along the
+//     outline's tangent at that point.
+//   • Layer N gets TABS: the rectangle extends OUTWARD from the outline
+//     (rendered as a solid black box that the user cuts as part of the outline).
+//   • Layer N+1 gets SLOTS: the rectangle extends INWARD into the layer
+//     (rendered as a solid black box that the user cuts as a notch).
+//   • The first layer has no slot below it; the last has no tab above.
+//
+// This produces visually correct, physically cuttable tab/slot pairs without
+// needing a general 2D polygon boolean library. Tabs are placed at the same
+// angular positions on every layer so they line up vertically when stacked.
+function rayLoopIntersection(cx, cy, dx, dy, loop){
+  // Find closest intersection of ray (cx+t*dx, cy+t*dy), t>0 with any edge of loop.
+  let bestT = Infinity, bestPt = null, bestEdgeAngle = 0;
+  for(let i=0; i<loop.length; i++){
+    const a = loop[i], b = loop[(i+1) % loop.length];
+    const ex = b.x - a.x, ey = b.y - a.y;
+    const denom = dx*ey - dy*ex;
+    if(Math.abs(denom) < 1e-10) continue;
+    const t = ((a.x - cx)*ey - (a.y - cy)*ex) / denom;
+    const s = ((a.x - cx)*dy - (a.y - cy)*dx) / denom;
+    if(t > 0 && s >= 0 && s <= 1 && t < bestT){
+      bestT = t;
+      bestPt = { x: cx + t*dx, y: cy + t*dy };
+      bestEdgeAngle = Math.atan2(ey, ex);
+    }
+  }
+  return bestPt ? { point: bestPt, edgeAngle: bestEdgeAngle } : null;
+}
+
+// For a given layer, returns an array of { cx, cy, angle } tab/slot anchor
+// positions in mm (model-space, not yet scaled by print scale or shifted to
+// page coords). cx/cy is the centre of the rectangle on the outline; angle is
+// the outline tangent direction at that point (radians).
+function getConnectorAnchors(layer, mb, count){
+  const cx = (mb.minX + mb.maxX) / 2;
+  const cy = (mb.minY + mb.maxY) / 2;
+  // Use the largest outer loop (by absolute area) as the perimeter to anchor on
+  let outerLoop = layer.loops[0] || [];
+  let bestArea = -1;
+  layer.loops.forEach(loop=>{
+    const a = polygonAreaAbs(loop);
+    if(a > bestArea){ bestArea = a; outerLoop = loop; }
+  });
+  if(outerLoop.length < 3) return [];
+  const anchors = [];
+  for(let i=0; i<count; i++){
+    const angle = (i / count) * Math.PI * 2;
+    const hit = rayLoopIntersection(cx, cy, Math.cos(angle), Math.sin(angle), outerLoop);
+    if(hit) anchors.push({ cx: hit.point.x, cy: hit.point.y, angle: hit.edgeAngle });
+  }
+  return anchors;
+}
+
+// Returns the 4 corners of a tab or slot rectangle, in mm model-space, given
+// an anchor + tab dimensions. dir = +1 for tab (outward), -1 for slot (inward).
+// The rectangle is centred ON the outline at (cx,cy) with width = tabW along
+// the outline tangent and height = tabH perpendicular to the tangent (extended
+// outward for tabs, inward for slots). For a slot we go fully inward; for a
+// tab we extend fully outward.
+function tabRectCorners(anchor, tabW, tabH, dir){
+  const cosA = Math.cos(anchor.angle), sinA = Math.sin(anchor.angle);
+  // Tangent unit vector: (cosA, sinA). Perpendicular (outward) = (-sinA, cosA).
+  // For tabs (dir=+1), the rect extends from outline outward by tabH.
+  // For slots (dir=-1), the rect extends from outline inward by tabH.
+  const hx = (tabW/2) * cosA, hy = (tabW/2) * sinA;       // half-width along tangent
+  const px = dir * tabH * (-sinA), py = dir * tabH * cosA; // perpendicular extension
+  return [
+    { x: anchor.cx - hx,            y: anchor.cy - hy            },  // outline-side corner 1
+    { x: anchor.cx + hx,            y: anchor.cy + hy            },  // outline-side corner 2
+    { x: anchor.cx + hx + px,       y: anchor.cy + hy + py       },  // outer/inner corner 2
+    { x: anchor.cx - hx + px,       y: anchor.cy - hy + py       },  // outer/inner corner 1
+  ];
+}
+
+// Render a tab or slot rectangle as an SVG path (closed polygon).
+// Coordinates are transformed the same way as layer loops:
+//   px_svg = (p.x - minLayerX) + margin + dx
+//   py_svg = margin + dy + (maxLayerY - p.y)
+function tabRectSVGPath(corners, minLayerX, maxLayerY, dx, margin){
+  const pts = corners.map(p => {
+    const sx = (p.x - minLayerX) + margin + dx;
+    const sy = margin + (maxLayerY - p.y) + 0;  // dx/dy applied via placement offset
+    return `${sx.toFixed(2)} ${(sy).toFixed(2)}`;
+  });
+  // Apply page dy offset separately (we add it here for clarity)
+  return 'M' + pts.join(' L') + ' Z';
+}
+
+// Build the SVG fragments for all tabs+slots on a given layer.
+// Returns { tabFragments, slotFragments } — both strings of SVG markup.
+// Uses the same coordinate transform as the layer outline for visual alignment.
+function buildConnectorSVG(layerIdx, totalLayers, layer, mb, scaledMB, s, dx, dy, margin, printScale){
+  const out = { tabs: '', slots: '' };
+  if(!document.getElementById('lockingTabs')) return out;
+  if(!document.getElementById('lockingTabs').checked) return out;
+  if(resolvedDecompMode !== 'contour') return out;
+  const tabW = parseFloat(document.getElementById('tabWidth').value) || 20;
+  const tabH = parseFloat(document.getElementById('tabHeight').value) || 10;
+  const tabCount = Math.max(2, Math.min(12, parseInt(document.getElementById('tabCount').value) || 4));
+  // Anchors are computed in scaled mm space (the same space as the loops we draw)
+  // because layer.loops are already in mm model-space; we multiply by print scale
+  // to match the displayed layer.
+  const scaledLayer = { loops: layer.loops.map(loop => loop.map(p => ({ x: p.x * s, y: p.y * s }))) };
+  const scaledBounds = {
+    minX: scaledMB.minX, maxX: scaledMB.maxX,
+    minY: scaledMB.minY, maxY: scaledMB.maxY
+  };
+  const anchors = getConnectorAnchors(scaledLayer, scaledBounds, tabCount);
+  if(!anchors.length) return out;
+
+  const minLayerX = layer.loops.length ? Math.min(...layer.loops.flatMap(l => l.map(p => p.x))) * s : scaledMB.minX;
+  const maxLayerY = layer.loops.length ? Math.max(...layer.loops.flatMap(l => l.map(p => p.y))) * s : scaledMB.maxY;
+
+  // Build SVG paths in page coordinates (matching layerPathAt's transform)
+  const transformPt = (p) => ({
+    x: (p.x - minLayerX) + margin + dx,
+    y: margin + dy + (maxLayerY - p.y)
+  });
+
+  // Tabs on every layer except the top one
+  if(layerIdx < totalLayers - 1){
+    anchors.forEach(a => {
+      const corners = tabRectCorners(a, tabW, tabH, +1); // outward
+      const svgCorners = corners.map(transformPt);
+      const d = 'M' + svgCorners.map(p => `${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' L') + ' Z';
+      out.tabs += `<path d="${d}" fill="none" stroke="black" stroke-width="0.4"/>`;
+    });
+  }
+  // Slots on every layer except the bottom one
+  if(layerIdx > 0){
+    anchors.forEach(a => {
+      const corners = tabRectCorners(a, tabW, tabH, -1); // inward
+      const svgCorners = corners.map(transformPt);
+      const d = 'M' + svgCorners.map(p => `${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' L') + ' Z';
+      out.slots += `<path d="${d}" fill="none" stroke="black" stroke-width="0.4" stroke-dasharray="1.5,1"/>`;
+    });
+  }
+  return out;
 }
 
 // ---------- print templates ----------
@@ -2168,7 +3009,26 @@ function buildPrintView(){
               holeSVG += holeSVGAt(px, py);
           });
         }
-        body += `<path d="${pathD}" fill="none" stroke="black" stroke-width="0.35" fill-rule="evenodd"/>${holeSVG}`;
+        // Locking tabs/slots (stacked-layers mode only)
+        let connectorSVG = '';
+        if(document.getElementById('lockingTabs') && document.getElementById('lockingTabs').checked && resolvedDecompMode === 'contour'){
+          const conn = buildConnectorSVG(pl.layerIdx, layers.length, layer, mb, mb, printScale, pl.dx, pl.dy, margin, printScale);
+          connectorSVG = conn.tabs + conn.slots;
+        }
+        // Honeycomb infill hexes (stacked-layers mode only)
+        let hollowSVG = '';
+        if(document.getElementById('hollowInfill') && document.getElementById('hollowInfill').checked && resolvedDecompMode === 'contour'){
+          const hexes = getHollowHexes(layer);
+          hexes.forEach(hex => {
+            const d = hex.map((p,i) => {
+              const px = (p.x - pl.minLayerX) + margin + pl.dx;
+              const py = margin + pl.dy + (pl.maxLayerY - p.y);
+              return (i===0?'M':'L') + px.toFixed(2) + ' ' + py.toFixed(2);
+            }).join(' ') + ' Z';
+            hollowSVG += `<path d="${d}" fill="none" stroke="black" stroke-width="0.25" stroke-dasharray="1,0.5"/>`;
+          });
+        }
+        body += `<path d="${pathD}" fill="none" stroke="black" stroke-width="0.35" fill-rule="evenodd"/>${holeSVG}${connectorSVG}${hollowSVG}`;
 
         // Big bold layer number at centroid of this shape
         const cx = margin + pl.dx + pl.w/2;
@@ -2180,7 +3040,7 @@ function buildPrintView(){
         const ly = margin + pl.dy + pl.h + 2.5;
         body += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-family="monospace" font-size="3" fill="#000">${pieceWordCap} ${pl.layerIdx+1}/${printedLayerCount}</text>`;
       });
-      labelText = `Page ${pageIdx+1} / ${pages.length} — ${page.placements.length} ${pieceWord}${page.placements.length===1?'':'s'} — cut solid lines`;
+      labelText = `Page ${pageIdx+1} / ${pages.length} — ${page.placements.length} ${pieceWord}${page.placements.length===1?'':'s'} — cut solid lines${(document.getElementById('lockingTabs') && document.getElementById('lockingTabs').checked && resolvedDecompMode==='contour')?' + tab outlines (solid) + slot outlines (dashed)':''}`;
     }
 
     pageEl.innerHTML = `
@@ -2320,14 +3180,45 @@ function openAssemblyPreview(){
       rowH = Math.max(rowH, bb.h);
     });
   } else {
-    // Stacked-layer mode: extrude each layer and stack at z = idx * thickness
+    // Stacked-layer mode: extrude each layer and stack at idx * thickness
+    // along the chosen slice axis. The 2D layer loops are in (x,y) regardless
+    // of slice axis (sliceAt projects to that), so for X/Y axis we need to
+    // re-map the 2D output back to the correct 3D plane before extruding.
+    const sliceAxis = document.getElementById('sliceAxis').value || 'z';
     title.textContent = 'Assembled preview (' + layers.length + ' layers × ' + thickness + 'mm = ' + (layers.length * thickness) + 'mm' + (scalePct!==100 ? ' · ' + scalePct + '%' : '') + ')';
-    hint.textContent = 'drag to orbit · scroll to zoom' + (scalePct!==100 ? ' — shown at ' + scalePct + '% print scale' : '');
+    hint.textContent = 'drag to orbit · scroll to zoom' + (scalePct!==100 ? ' — shown at ' + scalePct + '% print scale' : '') + (sliceAxis!=='z' ? ' · stacked along ' + sliceAxis.toUpperCase() + ' axis' : '');
     const cx = (mb.minX + mb.maxX) / 2;
     const cy = (mb.minY + mb.maxY) / 2;
     scaledLayers.forEach((layer, idx) => {
       const groups = classifyLoops(layer.loops);
-      const mesh = buildExtrudedMesh(groups, thickness, cx, cy, idx * thickness, material);
+      // For non-Z axes, transform the 2D loop into the correct 3D plane.
+      // sliceAt axis='x' outputs (Y, Z) -> for 3D we need to remap (x->Y, y->Z) and use X as the stack axis
+      // sliceAt axis='y' outputs (X, Z) -> for 3D we need to remap (x->X, y->Z) and use Y as the stack axis
+      let remappedGroups = groups;
+      if(sliceAxis === 'x'){
+        // Output was (Y, Z) -> swap so x=Y, y=Z; we then stack along X
+        remappedGroups = groups.map(g => ({
+          outer: g.outer.map(p => ({ x: p.y, y: p.x })).reverse(), // reverse to preserve winding after axis swap
+          holes: g.holes.map(h => h.map(p => ({ x: p.y, y: p.x })).reverse())
+        }));
+      } else if(sliceAxis === 'y'){
+        // Output was (X, Z) -> x=X (unchanged), y=Z (unchanged) — but we stack along Y, not Z.
+        // For Three.js ShapeGeometry in XY plane, we just need the 2D shape; the stacking
+        // position is handled by the offset below. No remap needed for the loop itself.
+      }
+      // Build the extruded mesh in the XY plane, then rotate/translate to the correct axis.
+      const mesh = buildExtrudedMesh(remappedGroups, thickness, cx, cy, 0, material);
+      if(sliceAxis === 'z'){
+        mesh.position.z = idx * thickness;
+      } else if(sliceAxis === 'x'){
+        // Rotate so the XY-plane extrusion lies in the YZ plane, then offset along X
+        mesh.rotation.y = Math.PI / 2;
+        mesh.position.x = idx * thickness;
+      } else if(sliceAxis === 'y'){
+        // Rotate so the XY-plane extrusion lies in the XZ plane, then offset along Y
+        mesh.rotation.x = Math.PI / 2;
+        mesh.position.y = idx * thickness;
+      }
       assemblyGroup.add(mesh);
     });
   }
@@ -2452,7 +3343,44 @@ function exportSVG(){
         holes += `<circle cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="${(holeDia/2).toFixed(2)}" fill="none" stroke="black" stroke-width="0.2" stroke-dasharray="1,1"/>`;
       });
     }
-    svg += `  <g id="layer-${li+1}" data-layer="${li+1}">\n    ${paths}\n    ${holes}\n  </g>\n`;
+    // Locking tabs / slots (stacked-layers mode only)
+    let connectors = '';
+    if(document.getElementById('lockingTabs') && document.getElementById('lockingTabs').checked && resolvedDecompMode === 'contour'){
+      const tabW = parseFloat(document.getElementById('tabWidth').value) || 20;
+      const tabH = parseFloat(document.getElementById('tabHeight').value) || 10;
+      const tabCount = Math.max(2, Math.min(12, parseInt(document.getElementById('tabCount').value) || 4));
+      const anchors = getConnectorAnchors(layer, mb, tabCount);
+      const transformPt = (p) => ({ x: p.x + ox, y: h - (p.y + oy) });
+      // Tabs on every layer except the top
+      if(li < layers.length - 1){
+        anchors.forEach(a => {
+          const corners = tabRectCorners(a, tabW, tabH, +1).map(transformPt);
+          const d = 'M' + corners.map(p => `${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' L') + ' Z';
+          connectors += `<path d="${d}" fill="none" stroke="black" stroke-width="0.3"/>`;
+        });
+      }
+      // Slots on every layer except the bottom
+      if(li > 0){
+        anchors.forEach(a => {
+          const corners = tabRectCorners(a, tabW, tabH, -1).map(transformPt);
+          const d = 'M' + corners.map(p => `${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' L') + ' Z';
+          connectors += `<path d="${d}" fill="none" stroke="black" stroke-width="0.3" stroke-dasharray="1.5,1"/>`;
+        });
+      }
+    }
+    // Honeycomb infill (stacked-layers mode only)
+    let hollows = '';
+    if(document.getElementById('hollowInfill') && document.getElementById('hollowInfill').checked && resolvedDecompMode === 'contour'){
+      const hexes = getHollowHexes(layer);
+      hexes.forEach(hex => {
+        const d = hex.map((p,i) => {
+          const px = p.x + ox, py = h - (p.y + oy);
+          return (i===0?'M':'L') + px.toFixed(2) + ' ' + py.toFixed(2);
+        }).join(' ') + ' Z';
+        hollows += `<path d="${d}" fill="none" stroke="black" stroke-width="0.25" stroke-dasharray="1,0.5"/>`;
+      });
+    }
+    svg += `  <g id="layer-${li+1}" data-layer="${li+1}">\n    ${paths}\n    ${holes}\n    ${connectors}\n    ${hollows}\n  </g>\n`;
   }
   svg += `</svg>`;
 
@@ -2521,10 +3449,47 @@ function exportSvgZip(){
         holes += `<circle cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="${(holeDia/2).toFixed(2)}" fill="none" stroke="black" stroke-width="0.2" stroke-dasharray="1,1"/>`;
       });
     }
+    // Locking tabs / slots (stacked-layers mode only)
+    let connectors = '';
+    if(document.getElementById('lockingTabs') && document.getElementById('lockingTabs').checked && resolvedDecompMode === 'contour'){
+      const tabW = parseFloat(document.getElementById('tabWidth').value) || 20;
+      const tabH = parseFloat(document.getElementById('tabHeight').value) || 10;
+      const tabCount = Math.max(2, Math.min(12, parseInt(document.getElementById('tabCount').value) || 4));
+      // Use this layer's own bounds (not the global model bounds) — per-layer SVG is self-contained
+      const layerMB = { minX: lMinX, maxX: lMaxX, minY: lMinY, maxY: lMaxY };
+      const anchors = getConnectorAnchors(layer, layerMB, tabCount);
+      const transformPt = (p) => ({ x: p.x + ox, y: h - (p.y + oy) });
+      if(li < layers.length - 1){
+        anchors.forEach(a => {
+          const corners = tabRectCorners(a, tabW, tabH, +1).map(transformPt);
+          const d = 'M' + corners.map(p => `${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' L') + ' Z';
+          connectors += `<path d="${d}" fill="none" stroke="black" stroke-width="0.3"/>`;
+        });
+      }
+      if(li > 0){
+        anchors.forEach(a => {
+          const corners = tabRectCorners(a, tabW, tabH, -1).map(transformPt);
+          const d = 'M' + corners.map(p => `${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' L') + ' Z';
+          connectors += `<path d="${d}" fill="none" stroke="black" stroke-width="0.3" stroke-dasharray="1.5,1"/>`;
+        });
+      }
+    }
+    // Honeycomb infill (stacked-layers mode only)
+    let hollows = '';
+    if(document.getElementById('hollowInfill') && document.getElementById('hollowInfill').checked && resolvedDecompMode === 'contour'){
+      const hexes = getHollowHexes(layer);
+      hexes.forEach(hex => {
+        const d = hex.map((p,i) => {
+          const px = p.x + ox, py = h - (p.y + oy);
+          return (i===0?'M':'L') + px.toFixed(2) + ' ' + py.toFixed(2);
+        }).join(' ') + ' Z';
+        hollows += `<path d="${d}" fill="none" stroke="black" stroke-width="0.25" stroke-dasharray="1,0.5"/>`;
+      });
+    }
     // Big layer number
     const numSize = Math.min(w, h) * 0.6;
     const numSVG = `<text x="${(w/2).toFixed(1)}" y="${(h/2).toFixed(1)}" font-family="sans-serif" font-size="${numSize.toFixed(1)}" font-weight="bold" fill="#000" text-anchor="middle" dominant-baseline="central" opacity="0.4">${li+1}</text>`;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w.toFixed(1)}mm" height="${h.toFixed(1)}mm" viewBox="0 0 ${w.toFixed(1)} ${h.toFixed(1)}">\n  ${paths}\n  ${numSVG}\n  ${holes}\n</svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w.toFixed(1)}mm" height="${h.toFixed(1)}mm" viewBox="0 0 ${w.toFixed(1)} ${h.toFixed(1)}">\n  ${paths}\n  ${numSVG}\n  ${holes}\n  ${connectors}\n  ${hollows}\n</svg>`;
     svgFiles.push({ name: `layer-${String(li+1).padStart(3,'0')}.svg`, content: svg });
   }
 
@@ -2637,6 +3602,518 @@ function crc32(data){
   return (crc ^ 0xFFFFFFFF) >>> 0;
 }
 
+// ---------- minimal PDF writer ----------
+// Produces a multi-page vector PDF that mirrors the print view: one PDF page
+// per print page, with stroked paths for outlines, holes, tabs, slots, and
+// hollow hexes. Text is rendered as a small bitmap image embedded per-page
+// (because writing Type1/TrueType font programs from scratch is huge); for
+// the big layer numbers we fall back to a stroked "ghost outline" of the
+// number rendered as line segments — but to keep this minimal we just skip
+// text and rely on the SVG/print view for labels.
+//
+// Coordinate system: PDF user-space is 1 unit = 1 point by default, with the
+// origin at the bottom-left and Y increasing upward. We use the page MediaBox
+// in points (1 mm = 72/25.4 ≈ 2.8346 points) and scale the content stream so
+// we can keep working in mm coordinates. The flip-Y transform is applied so
+// the layer loops (which use SVG-style "Y-down" mm coords) land correctly.
+//
+// Object structure (indirect objects):
+//   1: Catalog            2: Pages
+//   3..n: Page + Content pairs (one per print page)
+//   n+1..m: any image XObjects for text bitmaps (currently none — text skipped)
+// Then xref + trailer.
+
+// Helper: convert an array of bytes/strings to Uint8Array
+function pdfBytes(parts){
+  const enc = new TextEncoder();
+  const chunks = parts.map(p => {
+    if(p instanceof Uint8Array) return p;
+    if(typeof p === 'string') return enc.encode(p);
+    if(typeof p === 'number') return new Uint8Array([p & 0xFF]);
+    throw new Error('bad part');
+  });
+  let total = 0;
+  chunks.forEach(c => total += c.length);
+  const out = new Uint8Array(total);
+  let off = 0;
+  chunks.forEach(c => { out.set(c, off); off += c.length; });
+  return out;
+}
+
+// Escape a string for inclusion in a PDF literal string (parenthesized)
+function pdfEscapeString(s){
+  return s.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+}
+
+// Build a PDF content stream from a list of path operations.
+// Each op is one of:
+//   { op:'M', x, y }           -> moveto  (mm)
+//   { op:'L', x, y }           -> lineto  (mm)
+//   { op:'h' }                 -> closepath
+//   { op:'S' }                 -> stroke current path
+//   { op:'rgb', r, g, b }      -> set stroke color (0-1)
+//   { op:'w', width }          -> set line width (mm)
+//   { op:'dash', on, off }     -> set dash pattern (mm)
+//   { op:'solid' }             -> reset to solid stroke
+//   { op:'rect', x, y, w, h }  -> stroke rectangle (mm, Y-down)
+//   { op:'text', s, x, y, sz } -> place text (best-effort, see notes above)
+function buildPdfContent(ops, paperWmm, paperHmm){
+  const PT_PER_MM = 72 / 25.4;
+  // We set up a transform: scale by PT_PER_MM, then flip Y so that user-space
+  // mm coordinates with Y-down become PDF points with Y-up.
+  //   pdf_y = paperH_pt - mm_y * PT_PER_MM
+  // We bake this into a cm (concat matrix) operator so all subsequent coords
+  // can stay in mm:
+  //   cm: a=PT_PER_MM  b=0  c=0  d=-PT_PER_MM  e=0  f=paperH_pt
+  // After this, mm coords (x, y) where y grows downward map to:
+  //   x' = x * PT_PER_MM
+  //   y' = paperH_pt - y * PT_PER_MM
+  // which is the correct PDF user-space coordinate.
+  const paperH_pt = paperHmm * PT_PER_MM;
+  let s = '';
+  // Apply the cm transform
+  s += `${PT_PER_MM.toFixed(5)} 0 0 ${(-PT_PER_MM).toFixed(5)} 0 ${paperH_pt.toFixed(2)} cm\n`;
+  // Default graphics state: black stroke, 0.3mm width
+  s += `0 0 0 RG\n0.3 w\n1 J 1 j\n`;  // RG = stroke black; round joins/caps
+  let inPath = false;
+  let lastM = null;
+  for(const op of ops){
+    switch(op.op){
+      case 'rgb':
+        s += `${op.r.toFixed(3)} ${op.g.toFixed(3)} ${op.b.toFixed(3)} RG\n`;
+        break;
+      case 'w':
+        s += `${op.width.toFixed(3)} w\n`;
+        break;
+      case 'dash':
+        s += `[${op.on.toFixed(2)} ${op.off.toFixed(2)}] 0 d\n`;
+        break;
+      case 'solid':
+        s += `[] 0 d\n`;
+        break;
+      case 'M':
+        s += `${op.x.toFixed(2)} ${op.y.toFixed(2)} m\n`;
+        inPath = true; lastM = op;
+        break;
+      case 'L':
+        s += `${op.x.toFixed(2)} ${op.y.toFixed(2)} l\n`;
+        inPath = true;
+        break;
+      case 'h':
+        if(inPath) s += `h\n`;
+        inPath = false;
+        break;
+      case 'S':
+        if(inPath){ s += `S\n`; inPath = false; }
+        break;
+      case 'rect':
+        // PDF rect: x y w h re — but y in PDF is bottom-left. After our cm
+        // transform, mm coords with Y-down are correct, so we draw the rect
+        // using the (x, y) as the TOP-left in mm space. PDF's `re` operator
+        // takes (x, y, w, h) where (x,y) is the bottom-left corner of the
+        // rect in untransformed space. After our flip, this works out: a rect
+        // at (x, y) with size (w, h) in mm Y-down space becomes a rect whose
+        // bottom-left in PDF space is (x*PT, paperH_pt - (y+h)*PT).
+        // We can't easily use `re` with the cm in place because the height
+        // would be flipped. Instead, draw the rect as 4 line ops + stroke.
+        s += `${op.x.toFixed(2)} ${op.y.toFixed(2)} m `;
+        s += `${(op.x+op.w).toFixed(2)} ${op.y.toFixed(2)} l `;
+        s += `${(op.x+op.w).toFixed(2)} ${(op.y+op.h).toFixed(2)} l `;
+        s += `${op.x.toFixed(2)} ${(op.y+op.h).toFixed(2)} l h S\n`;
+        inPath = false;
+        break;
+      case 'text':
+        // Minimal text support: place using Helvetica (one of the standard 14
+        // PDF fonts — no font program needed). Coordinates in mm (transformed).
+        // Font size in points; convert mm font size if needed. Caller passes
+        // `sz` in mm; we convert to points.
+        s += `BT /F1 ${(op.sz * PT_PER_MM).toFixed(1)} Tf ${op.x.toFixed(2)} ${op.y.toFixed(2)} Td (${pdfEscapeString(op.s)}) Tj ET\n`;
+        break;
+    }
+  }
+  return s;
+}
+
+// Build a complete multi-page PDF document from a list of pages.
+// Each page: { width_mm, height_mm, ops: [...] }
+function buildPdf(pages){
+  const PT_PER_MM = 72 / 25.4;
+  const enc = new TextEncoder();
+  // Object table — collect as we go, then assemble with xref
+  const objects = [];  // 1-indexed; objects[0] = null placeholder
+  objects.push(null);  // object 0 is reserved
+
+  function addObject(content){
+    objects.push(content);
+    return objects.length - 1;
+  }
+
+  // Object 1: Catalog
+  const catalogId = addObject({
+    type: 'Catalog',
+    dict: null,
+    raw: null
+  });
+  // Object 2: Pages
+  const pagesId = addObject({
+    type: 'Pages',
+    dict: null,
+    raw: null
+  });
+
+  // Font object (Helvetica, standard 14)
+  const fontId = addObject(null);
+  objects[fontId] = { isFont: true };
+  const fontObj = `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>`;
+
+  // Per-page: Page + Content
+  const pageIds = [];
+  pages.forEach((page, idx) => {
+    const contentStr = buildPdfContent(page.ops, page.width_mm, page.height_mm);
+    const contentBytes = enc.encode(contentStr);
+    const contentId = addObject(null);
+    // Mark this object's raw bytes for serialization
+    objects[contentId] = { isStream: true, bytes: contentBytes, dict: `<< /Length ${contentBytes.length} >>` };
+
+    const pageObjId = addObject(null);
+    objects[pageObjId] = {
+      isPage: true,
+      contentId,
+      width_pt: page.width_mm * PT_PER_MM,
+      height_pt: page.height_mm * PT_PER_MM,
+      pagesId,
+      fontId
+    };
+    pageIds.push(pageObjId);
+  });
+
+  // Update Pages object with Kids + Count
+  objects[pagesId] = { isPages: true, kids: pageIds, count: pageIds.length };
+  // Update Catalog with Pages reference
+  objects[catalogId] = { isCatalog: true, pagesId };
+
+  // ---- Serialize ----
+  // Each object: "N 0 obj <body> endobj\n"
+  // Streams: "N 0 obj << /Length L >> stream\n<bytes>\nendstream endobj\n"
+  // Track byte offset of each object for xref.
+  let pdf = '';
+  const xrefOffsets = new Array(objects.length).fill(0);
+  pdf += '%PDF-1.4\n';
+  // Binary comment to mark as binary
+  pdf += '%\xE2\xE3\xCF\xD3\n';
+  for(let i = 1; i < objects.length; i++){
+    xrefOffsets[i] = pdf.length;
+    const obj = objects[i];
+    if(!obj){ pdf += `${i} 0 obj null endobj\n`; continue; }
+    if(obj.isCatalog){
+      pdf += `${i} 0 obj << /Type /Catalog /Pages ${obj.pagesId} 0 R >> endobj\n`;
+    } else if(obj.isPages){
+      const kidsStr = obj.kids.map(k => `${k} 0 R`).join(' ');
+      pdf += `${i} 0 obj << /Type /Pages /Kids [${kidsStr}] /Count ${obj.count} >> endobj\n`;
+    } else if(obj.isPage){
+      pdf += `${i} 0 obj << /Type /Page /Parent ${obj.pagesId} 0 R /MediaBox [0 0 ${obj.width_pt.toFixed(2)} ${obj.height_pt.toFixed(2)}] /Contents ${obj.contentId} 0 R /Resources << /Font << /F1 ${obj.fontId} 0 R >> >> >> endobj\n`;
+    } else if(obj.isStream){
+      pdf += `${i} 0 obj ${obj.dict}\nstream\n`;
+      // Need to insert raw bytes — we'll return a Uint8Array at the end
+      pdf += '__STREAM_PLACEHOLDER_' + i + '__';
+      pdf += '\nendstream\nendobj\n';
+    } else if(obj.isFont){
+      pdf += `${i} 0 obj ${fontObj} endobj\n`;
+    } else {
+      pdf += `${i} 0 obj null endobj\n`;
+    }
+  }
+  // xref table
+  const xrefStart = pdf.length;  // will be adjusted after we splice streams
+  // We need to write the xref but the offsets are currently measured against the
+  // string `pdf` (which doesn't include stream bytes). We'll build the final
+  // Uint8Array by splicing streams in place, then recompute offsets. Easier:
+  // build the whole thing as bytes from the start.
+  //
+  // Simpler approach: assemble as a Uint8Array, scanning for placeholders.
+
+  // Convert the string to bytes, then replace placeholders with actual stream bytes.
+  const enc2 = new TextEncoder();
+  let bytes = enc2.encode(pdf);
+
+  // Replace each __STREAM_PLACEHOLDER_N__ with the actual stream bytes
+  for(let i = 1; i < objects.length; i++){
+    if(objects[i] && objects[i].isStream){
+      const placeholder = enc2.encode(`__STREAM_PLACEHOLDER_${i}__`);
+      // Find the placeholder in bytes
+      let found = -1;
+      for(let j = 0; j + placeholder.length <= bytes.length; j++){
+        let match = true;
+        for(let k = 0; k < placeholder.length; k++){
+          if(bytes[j+k] !== placeholder[k]){ match = false; break; }
+        }
+        if(match){ found = j; break; }
+      }
+      if(found < 0) continue;
+      // Splice in the stream bytes
+      const before = bytes.subarray(0, found);
+      const after = bytes.subarray(found + placeholder.length);
+      bytes = pdfBytes([before, objects[i].bytes, after]);
+    }
+  }
+
+  // Now adjust xref offsets for any objects that came AFTER a stream whose
+  // placeholder was replaced by longer/shorter bytes. Easiest: scan for the
+  // "N 0 obj" markers in the final bytes and recompute offsets.
+  const finalOffsets = new Array(objects.length).fill(0);
+  const decoder = new TextDecoder();
+  for(let i = 1; i < objects.length; i++){
+    const marker = enc2.encode(`${i} 0 obj`);
+    for(let j = 0; j + marker.length <= bytes.length; j++){
+      let match = true;
+      for(let k = 0; k < marker.length; k++){
+        if(bytes[j+k] !== marker[k]){ match = false; break; }
+      }
+      if(match){ finalOffsets[i] = j; break; }
+    }
+  }
+
+  // Append xref table
+  const xrefHeader = `xref\n0 ${objects.length}\n0000000000 65535 f \n`;
+  let xrefBody = '';
+  for(let i = 1; i < objects.length; i++){
+    xrefBody += String(finalOffsets[i]).padStart(10, '0') + ' 00000 n \n';
+  }
+  const xrefOffset = bytes.length;
+  const trailer = `trailer\n<< /Size ${objects.length} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  const tail = enc2.encode(xrefHeader + xrefBody + trailer);
+  bytes = pdfBytes([bytes, tail]);
+
+  return new Blob([bytes], { type: 'application/pdf' });
+}
+
+// ---------- PDF export entry point ----------
+// Builds the same layout as buildPrintView but emits a PDF instead of opening
+// the browser print dialog. Mirrors the packed-page logic for print pages,
+// including alignment holes, locking tabs/slots, and hollow hexes.
+document.getElementById('exportPdfBtn').addEventListener('click', exportPDF);
+
+function exportPDF(){
+  if(!layers.length || !modelBoundsMM){ alert('Compute slices first.'); return; }
+  const root = document.getElementById('printRoot');
+  // Use the existing print layout (getPrintLayout) so PDF pages match the print preview exactly
+  const thickness = parseFloat(document.getElementById('thickness').value)||6;
+  const alignOn = resolvedDecompMode==='contour' && document.getElementById('alignHoles').checked;
+  const holeDia = parseFloat(document.getElementById('holeDia').value)||8;
+  const holeMode = document.getElementById('holeMode').value || 'center';
+  const printScale = getPrintScale();
+  const scaledLayers = getScaledLayers();
+  const mb = getScaledModelBounds();
+  const centerX = (mb.minX+mb.maxX)/2;
+  const centerY = (mb.minY+mb.maxY)/2;
+  const cornerInset = Math.max(holeDia * 1.5, 12);
+  const cornerHoles = [
+    { x: mb.minX + cornerInset, y: mb.minY + cornerInset },
+    { x: mb.maxX - cornerInset, y: mb.minY + cornerInset },
+    { x: mb.minX + cornerInset, y: mb.maxY - cornerInset },
+    { x: mb.maxX - cornerInset, y: mb.maxY - cornerInset },
+  ];
+  function getHolePoints(layer){
+    if(holeMode === 'corners') return cornerHoles.filter(p => pointInLoops(p, layer.loops));
+    return pointInLoops({x:centerX,y:centerY}, layer.loops) ? [{x:centerX,y:centerY}] : [];
+  }
+  const {from, to} = getPrintRange();
+  const { pages, paper, margin, contentW, contentH } = getPrintLayout();
+  const pieceWordCap = resolvedDecompMode==='panel' ? 'PANEL' : 'LAYER';
+  const isMirrored = resolvedDecompMode === 'contour' && document.getElementById('mirrorHalf').checked;
+  const printedLayerCount = isMirrored ? Math.ceil(layers.length / 2) : layers.length;
+  const includeCover = document.getElementById('includeCover').checked;
+  const pdfPages = [];
+
+  // ---- Cover page (optional) ----
+  if(includeCover){
+    const coverOps = [];
+    coverOps.push({ op:'solid' });
+    coverOps.push({ op:'rgb', r:0, g:0, b:0 });
+    coverOps.push({ op:'w', width:0.4 });
+    // Title
+    coverOps.push({ op:'text', s:'Contour Slicer — Cut Sheet', x:10, y:14, sz:5 });
+    // Summary line
+    const scalePct = Math.round(printScale*100);
+    const summary = `${printedLayerCount} ${pieceWordCap.toLowerCase()}s${isMirrored?' (x2 mirrored)':''} | ${thickness}mm MDF | ${pages.length} pages${scalePct!==100?` | print scale ${scalePct}%`:''}${(from>1||to<printedLayerCount)?` | printing ${from}-${to} only`:''}`;
+    coverOps.push({ op:'text', s:summary, x:10, y:24, sz:3.5 });
+    // Calibration ruler (100mm line scaled by printScale)
+    const calibLen = 100 * printScale;
+    coverOps.push({ op:'text', s: scalePct===100 ? 'Print calibration — this line should measure exactly 100mm' : `Print calibration at ${scalePct}% scale — this line should measure exactly ${calibLen.toFixed(0)}mm on paper`, x:10, y:40, sz:3 });
+    coverOps.push({ op:'M', x:10, y:50 });
+    coverOps.push({ op:'L', x:10+calibLen, y:50 });
+    coverOps.push({ op:'S' });
+    coverOps.push({ op:'M', x:10, y:46 }); coverOps.push({ op:'L', x:10, y:54 }); coverOps.push({ op:'S' });
+    coverOps.push({ op:'M', x:10+calibLen, y:46 }); coverOps.push({ op:'L', x:10+calibLen, y:54 }); coverOps.push({ op:'S' });
+    // Brief assembly steps
+    let yPos = 70;
+    const steps = [
+      '1. Print every page at 100% scale (no fit-to-page).',
+      '2. Spray-mount or glue-stick each layer template onto MDF.',
+      '3. Cut along the solid outline with a jigsaw or scroll saw.',
+      '4. Cut any interior (hole) outlines too.',
+      alignOn ? `5. Drill the marked ${holeDia}mm alignment holes.` : '5. (alignment holes off)',
+      '6. Stack layers in numeric order (1 = bottom).',
+      '7. Glue between layers, clamp, then sand the stepped edge smooth.'
+    ];
+    steps.forEach((line, i) => {
+      coverOps.push({ op:'text', s:line, x:10, y:yPos, sz:3 });
+      yPos += 6;
+    });
+    pdfPages.push({ width_mm: paper.w, height_mm: paper.h, ops: coverOps });
+  }
+
+  // ---- One PDF page per print page ----
+  pages.forEach((page, pageIdx) => {
+    const ops = [];
+    ops.push({ op:'solid' });
+    ops.push({ op:'rgb', r:0, g:0, b:0 });
+    ops.push({ op:'w', width:0.35 });
+    // Page border (faint)
+    ops.push({ op:'rect', x:margin, y:margin, w:contentW, h:contentH });
+
+    if(page.tiled){
+      // Tiled oversized page — draw the portion of the layer outline visible on this tile
+      const t = page.tiled;
+      const layer = scaledLayers[t.layerIdx];
+      // For each loop, walk edges; for each edge, clip to the tile rect (tileOriginX..tileOriginX+stepX, tileOriginY..tileOriginY+stepY) and emit visible segments
+      const tileMinX = t.tileOriginX, tileMaxX = t.tileOriginX + t.stepX;
+      const tileMinY = t.tileOriginY, tileMaxY = t.tileOriginY + t.stepY;
+      layer.loops.forEach(loop => {
+        for(let i=0; i<loop.length; i++){
+          const a = loop[i], b = loop[(i+1) % loop.length];
+          // Simple clip: if both endpoints inside tile, draw the segment
+          const aIn = a.x >= tileMinX && a.x <= tileMaxX && a.y >= tileMinY && a.y <= tileMaxY;
+          const bIn = b.x >= tileMinX && b.x <= tileMaxX && b.y >= tileMinY && b.y <= tileMaxY;
+          if(aIn && bIn){
+            const px1 = (a.x - tileMinX) + margin;
+            const py1 = margin + contentH - (a.y - tileMinY);
+            const px2 = (b.x - tileMinX) + margin;
+            const py2 = margin + contentH - (b.y - tileMinY);
+            ops.push({ op:'M', x:px1, y:py1 });
+            ops.push({ op:'L', x:px2, y:py2 });
+            ops.push({ op:'S' });
+          }
+        }
+      });
+      // Page label
+      ops.push({ op:'text', s:`${pieceWordCap} ${t.layerIdx+1} / ${printedLayerCount} - page ${t.pageNum}/${t.totalPages} - row ${t.row+1} col ${t.col+1}`, x:margin, y:margin+contentH+4, sz:2.8 });
+    } else {
+      // Packed page — draw each placement
+      page.placements.forEach(pl => {
+        const layer = scaledLayers[pl.layerIdx];
+        // Faint bounding box
+        ops.push({ op:'w', width:0.15 });
+        ops.push({ op:'dash', on:1, off:1 });
+        ops.push({ op:'rect', x:margin+pl.dx, y:margin+pl.dy, w:pl.w, h:pl.h });
+        ops.push({ op:'solid' });
+        ops.push({ op:'w', width:0.35 });
+        // Layer outline
+        layer.loops.forEach(loop => {
+          loop.forEach((p, i) => {
+            const px = (p.x - pl.minLayerX) + margin + pl.dx;
+            const py = margin + pl.dy + (pl.maxLayerY - p.y);
+            if(i === 0) ops.push({ op:'M', x:px, y:py });
+            else ops.push({ op:'L', x:px, y:py });
+          });
+          ops.push({ op:'h' });
+          ops.push({ op:'S' });
+        });
+        // Alignment holes (circles approximated as 16-gons)
+        if(alignOn){
+          const holes = getHolePoints(layer);
+          const r = holeDia / 2;
+          holes.forEach(hp => {
+            const cx = (hp.x - pl.minLayerX) + margin + pl.dx;
+            const cy = margin + pl.dy + (pl.maxLayerY - hp.y);
+            ops.push({ op:'w', width:0.2 });
+            ops.push({ op:'dash', on:1, off:1 });
+            for(let k=0; k<16; k++){
+              const a1 = (k / 16) * Math.PI * 2;
+              const a2 = ((k+1) / 16) * Math.PI * 2;
+              const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+              const x2 = cx + r * Math.cos(a2), y2 = cy + r * Math.sin(a2);
+              ops.push({ op:'M', x:x1, y:y1 });
+              ops.push({ op:'L', x:x2, y:y2 });
+              ops.push({ op:'S' });
+            }
+            // Cross-hair
+            ops.push({ op:'w', width:0.15 });
+            ops.push({ op:'solid' });
+            ops.push({ op:'M', x:cx-3, y:cy }); ops.push({ op:'L', x:cx+3, y:cy }); ops.push({ op:'S' });
+            ops.push({ op:'M', x:cx, y:cy-3 }); ops.push({ op:'L', x:cx, y:cy+3 }); ops.push({ op:'S' });
+            ops.push({ op:'w', width:0.35 });
+          });
+        }
+        // Locking tabs/slots
+        if(document.getElementById('lockingTabs') && document.getElementById('lockingTabs').checked && resolvedDecompMode === 'contour'){
+          const tabW = parseFloat(document.getElementById('tabWidth').value) || 20;
+          const tabH = parseFloat(document.getElementById('tabHeight').value) || 10;
+          const tabCount = Math.max(2, Math.min(12, parseInt(document.getElementById('tabCount').value) || 4));
+          const anchors = getConnectorAnchors(layer, mb, tabCount);
+          const transformPt = (p) => ({ x: (p.x - pl.minLayerX) + margin + pl.dx, y: margin + pl.dy + (pl.maxLayerY - p.y) });
+          ops.push({ op:'w', width:0.4 });
+          ops.push({ op:'solid' });
+          // Tabs on every layer except the top
+          if(pl.layerIdx < layers.length - 1){
+            anchors.forEach(a => {
+              const corners = tabRectCorners(a, tabW, tabH, +1).map(transformPt);
+              corners.forEach((p, i) => { if(i===0) ops.push({op:'M', x:p.x, y:p.y}); else ops.push({op:'L', x:p.x, y:p.y}); });
+              ops.push({ op:'h' }); ops.push({ op:'S' });
+            });
+          }
+          // Slots on every layer except the bottom
+          if(pl.layerIdx > 0){
+            ops.push({ op:'dash', on:1.5, off:1 });
+            anchors.forEach(a => {
+              const corners = tabRectCorners(a, tabW, tabH, -1).map(transformPt);
+              corners.forEach((p, i) => { if(i===0) ops.push({op:'M', x:p.x, y:p.y}); else ops.push({op:'L', x:p.x, y:p.y}); });
+              ops.push({ op:'h' }); ops.push({ op:'S' });
+            });
+            ops.push({ op:'solid' });
+          }
+        }
+        // Honeycomb infill hexes
+        if(document.getElementById('hollowInfill') && document.getElementById('hollowInfill').checked && resolvedDecompMode === 'contour'){
+          const hexes = getHollowHexes(layer);
+          ops.push({ op:'w', width:0.25 });
+          ops.push({ op:'dash', on:1, off:0.5 });
+          hexes.forEach(hex => {
+            hex.forEach((p, i) => {
+              const px = (p.x - pl.minLayerX) + margin + pl.dx;
+              const py = margin + pl.dy + (pl.maxLayerY - p.y);
+              if(i === 0) ops.push({ op:'M', x:px, y:py });
+              else ops.push({ op:'L', x:px, y:py });
+            });
+            ops.push({ op:'h' }); ops.push({ op:'S' });
+          });
+          ops.push({ op:'solid' });
+        }
+        // Layer number (text)
+        ops.push({ op:'solid' });
+        ops.push({ op:'text', s:String(pl.layerIdx+1), x:margin + pl.dx + pl.w/2 - 3, y:margin + pl.dy + pl.h/2 + 2, sz: Math.min(pl.w, pl.h) * 0.4 });
+        // Per-shape label
+        ops.push({ op:'text', s:`${pieceWordCap} ${pl.layerIdx+1}/${printedLayerCount}`, x:margin + pl.dx, y:margin + pl.dy + pl.h + 2.5, sz:2.5 });
+      });
+      // Page label
+      ops.push({ op:'text', s:`Page ${pageIdx+1} / ${pages.length} - ${page.placements.length} ${pieceWordCap.toLowerCase()}${page.placements.length===1?'':'s'} - cut solid lines`, x:margin, y:margin+contentH+4, sz:2.8 });
+    }
+    pdfPages.push({ width_mm: paper.w, height_mm: paper.h, ops });
+  });
+
+  // Build & download
+  const blob = buildPdf(pdfPages);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const scalePct = Math.round(getPrintScale()*100);
+  a.href = url;
+  a.download = `contour-slicer-${scalePct}pct.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+
 // ---------- project save / load ----------
 // Saves the current STL (as base64) + all settings to a .cspj file (JSON).
 // Load reverses it. Lets you close the tab and resume exactly where you left off.
@@ -2680,20 +4157,31 @@ function saveProject(){
   const stlB64 = btoa(binaryStr);
 
   const project = {
-    version: 1,
+    version: 2,
     stlBase64: stlB64,
     filename: document.getElementById('filename').textContent || 'model.stl',
     settings: {
       decompMode: document.querySelector('input[name=decompmode]:checked').value,
+      stlUnits: document.getElementById('stlUnits').value,
+      detectedUnit: detectedUnit,
       scaleMode: document.querySelector('input[name=scalemode]:checked').value,
       targetHeight: document.getElementById('targetHeight').value,
       thickness: document.getElementById('thickness').value,
       kerf: document.getElementById('kerf').value,
+      sliceAxis: document.getElementById('sliceAxis').value,
       sheetSize: document.getElementById('sheetSize').value,
       sheetW: document.getElementById('sheetW').value,
       sheetH: document.getElementById('sheetH').value,
       mirrorHalf: document.getElementById('mirrorHalf').checked,
       foldLines: document.getElementById('foldLines').checked,
+      lockingTabs: document.getElementById('lockingTabs').checked,
+      tabWidth: document.getElementById('tabWidth').value,
+      tabHeight: document.getElementById('tabHeight').value,
+      tabCount: document.getElementById('tabCount').value,
+      hollowInfill: document.getElementById('hollowInfill').checked,
+      hollowCell: document.getElementById('hollowCell').value,
+      hollowBorder: document.getElementById('hollowBorder').value,
+      hollowMinArea: document.getElementById('hollowMinArea').value,
       paperSize: document.getElementById('paperSize').value,
       overlap: document.getElementById('overlap').value,
       shapeSpacing: document.getElementById('shapeSpacing').value,
@@ -2727,18 +4215,31 @@ function loadProject(e){
       if(s){
         const modeRadio = document.querySelector('input[name=decompmode][value="' + s.decompMode + '"]');
         if(modeRadio) modeRadio.checked = true;
+        if(s.stlUnits) document.getElementById('stlUnits').value = s.stlUnits;
+        if(s.detectedUnit) detectedUnit = s.detectedUnit;
         const scaleRadio = document.querySelector('input[name=scalemode][value="' + s.scaleMode + '"]');
         if(scaleRadio) scaleRadio.checked = true;
         document.getElementById('targetHeight').value = s.targetHeight || 200;
         document.getElementById('targetHeight').disabled = s.scaleMode !== 'fit';
         document.getElementById('thickness').value = s.thickness || 6;
         document.getElementById('kerf').value = s.kerf || 0;
+        if(s.sliceAxis) document.getElementById('sliceAxis').value = s.sliceAxis;
         document.getElementById('sheetSize').value = s.sheetSize || '2440x1220';
         document.getElementById('sheetW').value = s.sheetW || 2440;
         document.getElementById('sheetH').value = s.sheetH || 1220;
         document.getElementById('customSheetField').style.display = (s.sheetSize === 'custom') ? 'block' : 'none';
         document.getElementById('mirrorHalf').checked = !!s.mirrorHalf;
         document.getElementById('foldLines').checked = !!s.foldLines;
+        document.getElementById('lockingTabs').checked = !!s.lockingTabs;
+        document.getElementById('lockingTabsField').style.display = !!s.lockingTabs ? 'block' : 'none';
+        document.getElementById('tabWidth').value = s.tabWidth || 20;
+        document.getElementById('tabHeight').value = s.tabHeight || 10;
+        document.getElementById('tabCount').value = s.tabCount || 4;
+        document.getElementById('hollowInfill').checked = !!s.hollowInfill;
+        document.getElementById('hollowField').style.display = !!s.hollowInfill ? 'block' : 'none';
+        document.getElementById('hollowCell').value = s.hollowCell || 30;
+        document.getElementById('hollowBorder').value = s.hollowBorder || 15;
+        document.getElementById('hollowMinArea').value = s.hollowMinArea || 10000;
         document.getElementById('paperSize').value = s.paperSize || 'a4';
         document.getElementById('overlap').value = s.overlap || 15;
         document.getElementById('shapeSpacing').value = s.shapeSpacing || 8;
